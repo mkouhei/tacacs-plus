@@ -1,0 +1,64 @@
+.TH do_auth 8  "February 27, 2010" "version 1.2"
+.SH NAME
+do_auth \- Program allowing more granular control than tac_plus.
+.SH SYNOPSIS
+.B do_auth
+\-u user [\-i Ip Address] [\-d Device address] [\-f Config filename] [\-l Log file] [-D Debug mode]
+.SH DESCRIPTION
+do_auth is a python program written to work as an authorization script for 
+tacacs to allow greater flexability in tacacs authentication.  It allows
+a user to be part of many predefined groups that can allow different
+access to different devices based on ip, user, and source address. 
+.PP
+Groups are assigned to users in the [users] section.  A user must
+be assigned to one or more groups, one per line.  Groups are defined 
+in brackets, but can be any name.  Each group can have up to 6 options 
+as defined below.
+
+ host_deny  	 	Deny any user coming from this host.  Optional.
+ host_allow		Allow users from this range. Mandatory with -i.
+ device_deny	 	Deny any device with this IP.  Optional.
+ device_permit	 	Allow this range. Mandatory if -d is specified.
+ command_deny	 	Deny these commands.  Optional.
+ command_permit	Allow these commands.  Mandatory.
+.PP
+The options are parsed in order till a match is found.  Obviously, 
+for login, the commands section is not parsed.  If a match is not
+found, or a deny is found, we move on to the next group.  At the
+end, we have an implicit deny if no groups match.  All tacacs keys
+passed on login to do_auth are returned.  (except cmd*)  It is 
+possible to modify them, but I haven't implemented this yet as
+I don't need it.  Future versions may have an av_pair & 
+append_av_pair option.
+.PP
+.SH OPTIONS
+.TP
+\-u
+Username.  Mandatory.  $user
+.TP
+\-i
+Ip address of user.  Optional.  If not specified, all host_ entries
+are ignored and can be omitted. $address
+.TP
+\-d
+Device address.  Optional.  If not specified, all device_ entries
+are ignored and can be omitted.  $name
+.TP
+\-f
+Config Filename.  Default is do_auth.ini.
+.TP
+\-l
+Logfile. Default is log.txt.
+.TP
+\-D
+Activate debug mode.
+.SH EXAMPLES
+.B do_auth
+-i $address -u $user -d $name -l /var/log/do_auth.log -f /etc/tacacs+/do_auth.ini
+.PP
+.SH EXIT STATUS
+do_auth returns 0 to allow, 1 to deny authorization.
+.SH AUTHOR
+Henry-Nicolas Tourneur from the do_auth file written by Dan Schmidt.
+.SH SEE ALSO
+tac_plus(8), tac_plus.conf(5) 

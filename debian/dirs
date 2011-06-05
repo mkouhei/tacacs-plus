@@ -1,0 +1,6 @@
+usr/sbin
+etc/tacacs+
+etc/logrotate.d
+etc/default
+etc/init.d
+

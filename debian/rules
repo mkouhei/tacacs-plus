@@ -1,0 +1,88 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+include /usr/share/dpatch/dpatch.make
+# These are used for cross-compiling and for saving the configure script
+# from having to guess our platform (since we know it already)
+DEB_HOST_GNU_TYPE   ?= $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
+DEB_BUILD_GNU_TYPE  ?= $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
+ifneq ($(DEB_HOST_GNU_TYPE),$(DEB_BUILD_GNU_TYPE))
+CROSS= --build $(DEB_BUILD_GNU_TYPE) --host $(DEB_HOST_GNU_TYPE)
+else
+CROSS= --build $(DEB_BUILD_GNU_TYPE)
+endif
+
+
+
+config.status: patch-stamp configure
+	dh_testdir
+ifneq "$(wildcard /usr/share/misc/config.sub)" ""
+	cp -f /usr/share/misc/config.sub config.sub
+endif
+ifneq "$(wildcard /usr/share/misc/config.guess)" ""
+	cp -f /usr/share/misc/config.guess config.guess
+endif
+	./configure $(CROSS) --prefix=/usr --bindir=\$${prefix}/sbin --mandir=\$${prefix}/share/man\
+		--infodir=\$${prefix}/share/info CFLAGS="$(CFLAGS)"\
+		--enable-acls --enable-uenable --enable-maxsess --enable-finger
+
+build: build-stamp
+
+build-stamp:  config.status 
+	dh_testdir
+	$(MAKE)
+
+	touch $@
+
+clean: unpatch
+	dh_testdir
+	rm -f build-stamp 
+
+	[ ! -f Makefile ] || $(MAKE) distclean
+	rm -f config.sub config.guess users_guide debian/*.log debian/files
+
+	dh_prep
+	dh_clean
+
+install: build
+	dh_testdir
+	dh_installdirs
+
+	$(MAKE) DESTDIR=$(CURDIR)/debian/tmp install
+
+
+# Build architecture-independent files here.
+binary-indep: build install
+
+# Build architecture-dependent files here.
+binary-arch: build install
+	dh_testdir
+	dh_installchangelogs CHANGES
+	dh_installdocs	
+	dh_installlogrotate
+	dh_installinit --name=tacacs_plus
+	dh_installman
+	dh_install
+	dh_makeshlibs
+	dh_shlibdeps
+	dh_link
+	dh_strip
+	dh_fixperms
+	install -m 644 debian/tacacs+.default $(CURDIR)/debian/tacacs+/etc/default/tacacs+
+	install -m 600 debian/tac_plus.conf $(CURDIR)/debian/tacacs+/etc/tacacs+
+	install -m 755 do_auth.py $(CURDIR)/debian/tacacs+/usr/sbin/do_auth
+	install -d $(CURDIR)/debian/tacacs+/usr/share/lintian/overrides
+	install -d $(CURDIR)/debian/libtacacs+1/usr/share/lintian/overrides
+	install -m 644 debian/tacacs+.lintian-overrides $(CURDIR)/debian/tacacs+/usr/share/lintian/overrides/tacacs+
+	install -m 644 debian/do_auth.8 $(CURDIR)/debian/tacacs+/usr/share/man/man8
+	install -m 644 debian/libtacacs+1.lintian-overrides $(CURDIR)/debian/libtacacs+1/usr/share/lintian/overrides/libtacacs+1
+	dh_compress
+	dh_installdeb
+	dh_gencontrol
+	dh_md5sums
+	dh_builddeb
+
+binary: binary-indep binary-arch
+.PHONY: build clean binary-indep binary-arch binary install 
+
+

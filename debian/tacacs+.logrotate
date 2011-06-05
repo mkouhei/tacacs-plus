@@ -1,0 +1,12 @@
+/var/log/tac_plus.log
+/var/log/tac_plus.acct {
+  rotate 4
+  weekly
+  compress
+  missingok
+  notifempty
+  postrotate
+ 	invoke-rc.d tacacs_plus reload > /dev/null
+  endscript
+}
+

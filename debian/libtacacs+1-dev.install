@@ -1,0 +1,3 @@
+usr/include/*
+usr/lib/libtacacs*.so
+usr/share/man/man3

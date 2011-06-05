@@ -1,0 +1,66 @@
+tacacs+ (4.0.4.19-11) unstable; urgency=low
+  * Correct one lintian error.
+
+ -- Henry-Nicolas Tourneur <henry.nicolas@tourneur.be>  Mon, 5 Jun 2011 17:53:51 +0100
+
+tacacs+ (4.0.4.19-10) unstable; urgency=low
+  * Closes: #609755 (ignore $DAEMONUSER in init script stop_server())
+
+ -- Henry-Nicolas Tourneur <henry.nicolas@tourneur.be>  Mon, 12 Jan 2011 21:07:51 +0100
+
+tacacs+ (4.0.4.19-9) unstable; urgency=low
+  * Improve the init script: check the config on 
+    start/reload (Thanks to Erik Wenzel)
+  * Use the debian way to restart daemons in logrotate scripts (Erik Wenzel too)
+
+ -- Henry-Nicolas Tourneur <henry.nicolas@tourneur.be>  Mon, 18 Oct 2010 21:30:51 +0100
+
+tacacs+ (4.0.4.19-8) unstable; urgency=low
+  * Closes: #582334 (replace gethostbyname() with getaddrinfo())
+
+ -- Henry-Nicolas Tourneur <henry.nicolas@tourneur.be>  Thu, 23 May 2010 11:46:24 +0100
+
+tacacs+ (4.0.4.19-7) unstable; urgency=low
+  * Closes: #580845 (fix logrotate init script reload issue)
+
+ -- Henry-Nicolas Tourneur <henry.nicolas@tourneur.be>  Thu, 09 May 2010 13:23:15 +0100
+
+tacacs+ (4.0.4.19-6) unstable; urgency=low
+  * Closes: #573766 (fix FTBFS)
+
+ -- Henry-Nicolas Tourneur <henry.nicolas@tourneur.be>  Thu, 14 Mar 2010 11:21:08 +0100
+
+tacacs+ (4.0.4.19-5) unstable; urgency=low
+  * Correct a typo in copyright file
+  * Add the path to the GPL3 license in copyright file
+
+ -- Henry-Nicolas Tourneur <henry.nicolas@tourneur.be>  Thu, 13 Mar 2010 12:03:33 +0100
+
+tacacs+ (4.0.4.19-4) unstable; urgency=low
+  * Include do_auth.py in binary and correct copyright issue
+  * Add a man page for do_auth
+
+ -- Henry-Nicolas Tourneur <henry.nicolas@tourneur.be>  Thu, 22 Feb 2010 22:55:42 +0100
+
+tacacs+ (4.0.4.19-3) unstable; urgency=low
+  * Remove bad group/owner from the logrotate file
+
+ -- Henry-Nicolas Tourneur <henry.nicolas@tourneur.be>  Thu, 14 Feb 2010 20:19:14 +0100
+
+tacacs+ (4.0.4.19-2) unstable; urgency=low
+  * Correct an error in the logrotate file
+
+ -- Henry-Nicolas Tourneur <henry.nicolas@tourneur.be>  Thu, 11 Feb 2010 19:06:14 +0100
+
+tacacs+ (4.0.4.19-1) unstable; urgency=low
+
+  * Patches:
+    - fix_man : Correct a man page error about a date
+  * 2 lintian overwrites:
+    - package-name-doesnt-match-sonames : because the so file 
+      is named libtacacs.so but the software name is tacacs+ and not tacacs.
+    - non-standard-file-perm : because the main configuration 
+      file holds the tacacs+ key, it shouldn't be world readable.
+  * Initial release (Closes: #568161)
+
+ -- Henry-Nicolas Tourneur <henry.nicolas@tourneur.be>  Thu, 04 Feb 2010 15:04:46 +0100

@@ -1,0 +1,139 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## fix_gethostbyname.dpatch by  <root@>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: No description.
+
+@DPATCH@
+diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' '--exclude=.hg' '--exclude=_darcs' '--exclude=.bzr' tacacs+-4.0.4.19~/maxsess.c tacacs+-4.0.4.19/maxsess.c
+--- tacacs+-4.0.4.19~/maxsess.c	2009-07-28 02:15:10.000000000 +0000
++++ tacacs+-4.0.4.19/maxsess.c	2010-05-23 09:43:06.000000000 +0000
+@@ -31,6 +31,8 @@
+ 
+ char *wholog = TACPLUS_WHOLOGFILE;
+ 
++static int timed_read(int, unsigned char *, int, int);
++
+ /*
+  * initialize wholog file for tracking of user logins/logouts from
+  * accounting records.
+@@ -262,8 +264,8 @@
+  *
+  * Return -1 on error, eof or timeout. Otherwise return number of bytes read.
+  */
+-int
+-timed_read(int fd, u_char *ptr, int nbytes, int timeout)
++static int
++timed_read(int fd, unsigned char *ptr, int nbytes, int timeout)
+ {
+     int nread;
+     struct pollfd pfds;
+@@ -346,64 +348,65 @@
+  * Column zero contains a space or an asterisk character.  The line number
+  * starts at column 1 and is 3 digits wide.  User names start at column 13,
+  * with a maximum possible width of 10.
++ *
++ * Returns the number of sessions/connections, or zero on error.
+  */
+ 
+ static int
+ ckfinger(char *user, char *nas, struct identity *idp)
+ {
+-    struct sockaddr_in sin;
+-    struct servent *serv;
+-    int count, s, bufsize;
++    struct addrinfo hints, *res, *resp;
++    int count, s, bufsize, ecode;
+     char *buf, *p, *pn;
+     int incr = 4096, slop = 32;
+-    u_long inaddr;
+     char *curport = portname(idp->NAS_port);
+     char *name;
+ 
+-    /* The finger service, aka port 79 */
+-    serv = getservbyname("finger", "tcp");
+-    if (serv) {
+-	sin.sin_port = serv->s_port;
+-    } else {
+-	sin.sin_port = 79;
+-    }
++    memset(&hints, 0, sizeof(struct addrinfo));
++    hints.ai_family = PF_UNSPEC;
++    hints.ai_socktype = SOCK_STREAM;
+ 
+-    /* Get IP addr for the NAS */
+-    inaddr = inet_addr(nas);
+-    if (inaddr != -1) {
+-	/* A dotted decimal address */
+-	memcpy(&sin.sin_addr, &inaddr, sizeof(inaddr));
+-	sin.sin_family = AF_INET;
+-    } else {
+-	struct hostent *host = gethostbyname(nas);
++    if ((ecode = getaddrinfo(nas, "finger", &hints, &res)) != 0) {
++	report(LOG_ERR, "ckfinger: getaddrinfo %s failure: %s", nas,
++        gai_strerror(ecode));
++        return(0);
++    }
+ 
+-	if (host == NULL) {
+-	    report(LOG_ERR, "ckfinger: gethostbyname %s failure: %s",
+-		   nas, strerror(errno));
++    ecode = 0;
++    for (resp = res; resp != NULL; resp = resp->ai_next) {
++        s = socket(resp->ai_family, resp->ai_socktype, resp->ai_protocol);
++        if (s < 0) {
++            if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
++                continue;
++            report(LOG_ERR, "ckfinger: socket: %s", strerror(errno));
++            freeaddrinfo(res);
+ 	    return(0);
+ 	}
+-	memcpy(&sin.sin_addr, host->h_addr, host->h_length);
+-	sin.sin_family = host->h_addrtype;
++	if ((ecode = connect(s, resp->ai_addr, res->ai_addrlen)) < 0) {
++            close(s);
++            continue;
++        } else
++            break;
+     }
+ 
+-    s = socket(AF_INET, SOCK_STREAM, 0);
+-    if (s < 0) {
++    freeaddrinfo(res);
++    /* socket failure / no supported address families */
++    if (resp == NULL && ecode == 0) {
+ 	report(LOG_ERR, "ckfinger: socket: %s", strerror(errno));
+ 	return(0);
+     }
+-    if (connect(s, (struct sockaddr *) & sin, sizeof(sin)) < 0) {
+-	report(LOG_ERR, "ckfinger: connect failure %s", strerror(errno));
+-	close(s);
++    if (ecode != 0) {
++        report(LOG_ERR, "ckfinger: connect %s: %s", nas, strerror(errno));
+ 	return(0);
+     }
+-    /* Read in the finger output into a single flat buffer */
++    /* Read the finger output into a single flat buffer */
+     buf = NULL;
+     bufsize = 0;
+     for (;;) {
+ 	int x;
+ 
+ 	buf = tac_realloc(buf, bufsize + incr + slop);
+-	x = timed_read(s, buf + bufsize, incr, 10);
++	x = timed_read(s, (unsigned char *)(buf + bufsize), incr, 10);
+ 	if (x <= 0) {
+ 	    break;
+ 	}
+diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' '--exclude=.hg' '--exclude=_darcs' '--exclude=.bzr' tacacs+-4.0.4.19~/tac_plus.h tacacs+-4.0.4.19/tac_plus.h
+--- tacacs+-4.0.4.19~/tac_plus.h	2009-07-28 00:11:53.000000000 +0000
++++ tacacs+-4.0.4.19/tac_plus.h	2010-05-23 09:43:45.000000000 +0000
+@@ -669,7 +669,7 @@
+     char username[64];		/* User name */
+     char NAS_name[32];		/* NAS user logged into */
+     char NAS_port[32];		/*  ...port on that NAS */
+-    char NAC_address[32];	/*  ...IP address of NAS */
++    char NAC_address[64];	/*  ...IP address of NAS */
+ };
+ #endif /* MAXSESS */
+ 
