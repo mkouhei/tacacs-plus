@@ -83,19 +83,19 @@ lookup(char *sym, struct author_data *data)
 	return(tac_strdup(data->id->NAC_address));
     }
     if (STREQ(sym, "priv")) {
-	sprintf(buf, "%d", data->id->priv_lvl);
+	snprintf(buf, sizeof(buf), "%d", data->id->priv_lvl);
 	return(tac_strdup(buf));
     }
     if (STREQ(sym, "method")) {
-	sprintf(buf, "%d", data->authen_method);
+	snprintf(buf, sizeof(buf), "%d", data->authen_method);
 	return(tac_strdup(buf));
     }
     if (STREQ(sym, "type")) {
-	sprintf(buf, "%d", data->authen_type);
+	snprintf(buf, sizeof(buf), "%d", data->authen_type);
 	return(tac_strdup(buf));
     }
     if (STREQ(sym, "service")) {
-	sprintf(buf, "%d", data->service);
+	snprintf(buf, sizeof(buf), "%d", data->service);
 	return(tac_strdup(buf));
     }
     if (STREQ(sym, "status")) {
@@ -204,17 +204,17 @@ waitfor(int pid)
     ret = waitpid(pid, &status, 0);
 
     if (ret < 0) {
-	report(LOG_ERR, "%s: pid %l no child exists", session.peer, (long)pid);
+	report(LOG_ERR, "%s: pid %ld no child exists", session.peer, (long)pid);
 	return(-1);
     }
     if (!WIFEXITED(status)) {
-	report(LOG_ERR, "%s: pid %l child in illegal state", session.peer,
+	report(LOG_ERR, "%s: pid %ld child in illegal state", session.peer,
 	       (long)pid);
 	return(-1);
     }
     if (debug & DEBUG_AUTHOR_FLAG)
-	report(LOG_DEBUG, "pid %d child exited status %l", (long)pid,
-	       WEXITSTATUS(status));
+	report(LOG_DEBUG, "pid %ld child exited status %ld", (long)pid,
+	       (long)WEXITSTATUS(status));
 
     return(WEXITSTATUS(status));
 }

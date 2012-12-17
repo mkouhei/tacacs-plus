@@ -21,8 +21,6 @@
 
 #include "tac_plus.h"
 
-#ifdef MAXSESS
-
 #if HAVE_CTYPE_H
 # include <ctype.h>
 #endif
@@ -30,6 +28,8 @@
 #include <signal.h>
 
 char *wholog = TACPLUS_WHOLOGFILE;
+
+static int timed_read(int, unsigned char *, int, int);
 
 /*
  * initialize wholog file for tracking of user logins/logouts from
@@ -109,7 +109,6 @@ process_stop_record(struct identity *idp)
     tac_lockfd(wholog, fileno(fp));
 
     for (recnum = 0; 1; recnum++) {
-
 	fseek(fp, recnum * sizeof(struct peruser), SEEK_SET);
 
 	if (fread(&pu, sizeof(pu), 1, fp) <= 0) {
@@ -166,11 +165,11 @@ process_start_record(struct identity *idp)
 	}
     }
 
-    /* This is a START record, so write a new record or update the existing
+    /*
+     * This is a START record, so write a new record or update the existing
      * one.  Note that we zero the memory, so the strncpy()'s will truncate
      * long names and always leave a null-terminated string.
      */
-
     memset(&pu, 0, sizeof(pu));
     strncpy(pu.username, idp->username, sizeof(pu.username) - 1);
     strncpy(pu.NAS_name, idp->NAS_name, sizeof(pu.NAS_name) - 1);
@@ -179,7 +178,6 @@ process_start_record(struct identity *idp)
 
     /* Already in DB? */
     if (foundrec >= 0) {
-
 	if (debug & DEBUG_MAXSESS_FLAG) {
 	    report(LOG_DEBUG,
 		   "START record -- overwrite existing %s entry %d for %s "
@@ -262,8 +260,8 @@ loguser(struct acct_rec *rec)
  *
  * Return -1 on error, eof or timeout. Otherwise return number of bytes read.
  */
-int
-timed_read(int fd, u_char *ptr, int nbytes, int timeout)
+static int
+timed_read(int fd, unsigned char *ptr, int nbytes, int timeout)
 {
     int nread;
     struct pollfd pfds;
@@ -322,7 +320,6 @@ timed_read(int fd, u_char *ptr, int nbytes, int timeout)
     /* NOTREACHED */
 }
 
-#ifdef MAXSESS_FINGER
 /*
  * Contact a NAS (using finger) to check how many sessions this USER
  * is currently running on it.
@@ -346,64 +343,63 @@ timed_read(int fd, u_char *ptr, int nbytes, int timeout)
  * Column zero contains a space or an asterisk character.  The line number
  * starts at column 1 and is 3 digits wide.  User names start at column 13,
  * with a maximum possible width of 10.
+ *
+ * Returns the number of sessions/connections, or zero on error.
  */
-
 static int
 ckfinger(char *user, char *nas, struct identity *idp)
 {
-    struct sockaddr_in sin;
-    struct servent *serv;
-    int count, s, bufsize;
+    struct addrinfo hints, *res, *resp;
+    int count, s, bufsize, ecode;
     char *buf, *p, *pn;
     int incr = 4096, slop = 32;
-    u_long inaddr;
     char *curport = portname(idp->NAS_port);
     char *name;
 
-    /* The finger service, aka port 79 */
-    serv = getservbyname("finger", "tcp");
-    if (serv) {
-	sin.sin_port = serv->s_port;
-    } else {
-	sin.sin_port = 79;
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = PF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    if ((ecode = getaddrinfo(nas, "finger", &hints, &res)) != 0) {
+	report(LOG_ERR, "ckfinger: getaddrinfo %s failure: %s", nas,
+	       gai_strerror(ecode));
+	return(0);
     }
 
-    /* Get IP addr for the NAS */
-    inaddr = inet_addr(nas);
-    if (inaddr != -1) {
-	/* A dotted decimal address */
-	memcpy(&sin.sin_addr, &inaddr, sizeof(inaddr));
-	sin.sin_family = AF_INET;
-    } else {
-	struct hostent *host = gethostbyname(nas);
-
-	if (host == NULL) {
-	    report(LOG_ERR, "ckfinger: gethostbyname %s failure: %s",
-		   nas, strerror(errno));
+    ecode = 0;
+    for (resp = res; resp != NULL; resp = resp->ai_next) {
+	s = socket(resp->ai_family, resp->ai_socktype, resp->ai_protocol);
+	if (s < 0) {
+	    if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
+		continue;
+	    report(LOG_ERR, "ckfinger: socket: %s", strerror(errno));
+	    freeaddrinfo(res);
 	    return(0);
 	}
-	memcpy(&sin.sin_addr, host->h_addr, host->h_length);
-	sin.sin_family = host->h_addrtype;
+	if ((ecode = connect(s, resp->ai_addr, res->ai_addrlen)) < 0) {
+	    close(s);
+	    continue;
+	} else
+	    break;
     }
-
-    s = socket(AF_INET, SOCK_STREAM, 0);
-    if (s < 0) {
+    freeaddrinfo(res);
+    /* socket failure / no supported address families */
+    if (resp == NULL && ecode == 0) {
 	report(LOG_ERR, "ckfinger: socket: %s", strerror(errno));
 	return(0);
     }
-    if (connect(s, (struct sockaddr *) & sin, sizeof(sin)) < 0) {
-	report(LOG_ERR, "ckfinger: connect failure %s", strerror(errno));
-	close(s);
+    if (ecode != 0) {
+	report(LOG_ERR, "ckfinger: connect %s: %s", nas, strerror(errno));
 	return(0);
     }
-    /* Read in the finger output into a single flat buffer */
+    /* Read the finger output into a single flat buffer */
     buf = NULL;
     bufsize = 0;
     for (;;) {
 	int x;
 
 	buf = tac_realloc(buf, bufsize + incr + slop);
-	x = timed_read(s, buf + bufsize, incr, 10);
+	x = timed_read(s, (unsigned char *)(buf + bufsize), incr, 10);
 	if (x <= 0) {
 	    break;
 	}
@@ -503,19 +499,18 @@ ckfinger(char *user, char *nas, struct identity *idp)
  * Use finger to contact each NAS that wholog says has this user
  * logged on.
  */
-static int
+int
 countusers_by_finger(struct identity *idp)
 {
     FILE *fp;
     struct peruser pu;
     int x, naddr, nsess, n;
-    char **addrs, *uname;
+    char **addrs;
 
     fp = fopen(wholog, "r+");
     if (fp == NULL) {
 	return(0);
     }
-    uname = idp->username;
 
     /* Count sessions */
     tac_lockfd(wholog, fileno(fp));
@@ -527,7 +522,7 @@ countusers_by_finger(struct identity *idp)
 	int dup;
 
 	/* Ignore records for everyone except this user */
-	if (strcmp(pu.username, uname)) {
+	if (strcmp(pu.username, idp->username)) {
 	    continue;
 	}
 	/* Only check a given NAS once */
@@ -549,13 +544,13 @@ countusers_by_finger(struct identity *idp)
 	/* Validate via finger */
 	if (debug & DEBUG_MAXSESS_FLAG) {
 	    report(LOG_DEBUG, "Running finger on %s for user %s/%s",
-		   pu.NAS_name, uname, idp->NAS_port);
+		   pu.NAS_name, idp->username, idp->NAS_port);
 	}
-	n = ckfinger(uname, pu.NAS_name, idp);
+	n = ckfinger(idp->username, pu.NAS_name, idp);
 
 	if (debug & DEBUG_MAXSESS_FLAG) {
 	    report(LOG_DEBUG, "finger reports %d active session%s for %s on %s",
-		   n, (n == 1 ? "" : "s"), uname, pu.NAS_name);
+		   n, (n == 1 ? "" : "s"), idp->username, pu.NAS_name);
 	}
 	nsess += n;
     }
@@ -569,13 +564,12 @@ countusers_by_finger(struct identity *idp)
 
     return(nsess);
 }
-#endif	/* MAXSESS_FINGER */
 
 /*
  * Estimate how many sessions a named user currently owns by looking in
  * the wholog file.
  */
-static int
+int
 countuser(struct identity *idp)
 {
     FILE *fp;
@@ -591,7 +585,6 @@ countuser(struct identity *idp)
     tac_lockfd(wholog, fileno(fp));
     nsess = 0;
     while (fread(&pu, sizeof(pu), 1, fp) > 0) {
-
 	/* Current user */
 	if (strcmp(pu.username, idp->username)) {
 	    continue;
@@ -608,80 +601,3 @@ countuser(struct identity *idp)
     fclose(fp);
     return(nsess);
 }
-
-/*
- * is_async()
- * Tell if the named NAS port is an async-like device.
- *
- * Finger reports async users, but not ISDN ones (yay).  So we can do
- * a "slow" double check for async, but not ISDN.
- */
-static int
-is_async(char *portname)
-{
-    if (isdigit((int) *portname) || !strncmp(portname, "Async", 5) ||
-	!strncmp(portname, "tty", 3)) {
-	return(1);
-    }
-    return(0);
-}
-
-/*
- * See if this user can have more sessions.
- */
-int
-maxsess_check_count(char *user, struct author_data *data)
-{
-    int sess, maxsess;
-    struct identity *id;
-
-    /* No max session configured--don't check */
-    id = data->id;
-
-    maxsess = cfg_get_intvalue(user, TAC_IS_USER, S_maxsess, TAC_PLUS_RECURSE);
-    if (!maxsess) {
-	if (debug & (DEBUG_MAXSESS_FLAG | DEBUG_AUTHOR_FLAG)) {
-	    report(LOG_DEBUG, "%s may run an unlimited number of sessions",
-		   user);
-	}
-	return(0);
-    }
-    /* Count sessions for this user by looking in our wholog file */
-    sess = countuser(id);
-
-    if (debug & (DEBUG_MAXSESS_FLAG | DEBUG_AUTHOR_FLAG)) {
-	report(LOG_DEBUG, "user %s is running %d out of a maximum of %d "
-	       "sessions", user, sess, maxsess);
-    }
-
-#ifdef MAXSESS_FINGER
-    if ((sess >= maxsess) && is_async(id->NAS_port)) {
-	/*
-	 * If we have finger available, double check this count by contacting
-	 * the NAS
-	 */
-	sess = countusers_by_finger(id);
-    }
-#endif
-
-    /* If it's really too high, don't authorize more services */
-    if (sess >= maxsess) {
-	char buf[80];
-
-	sprintf(buf,
-		"Login failed; too many active sessions (%d maximum)",
-		maxsess);
-
-	data->msg = tac_strdup(buf);
-
-	if (debug & (DEBUG_AUTHOR_FLAG | DEBUG_MAXSESS_FLAG)) {
-	    report(LOG_DEBUG, data->msg);
-	}
-	data->status = AUTHOR_STATUS_FAIL;
-	data->output_args = NULL;
-	data->num_out_args = 0;
-	return(1);
-    }
-    return(0);
-}
-#endif				/* MAXSESS */

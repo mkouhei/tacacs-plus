@@ -90,3 +90,4 @@
 # define S_pam		49
 #endif
 #define	S_syslog	50
+#define S_aceclnt	51

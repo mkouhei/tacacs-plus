@@ -37,10 +37,18 @@ accounting(u_char *pak)
     if (debug & DEBUG_ACCT_FLAG)
 	report(LOG_DEBUG, "Start accounting request");
 
-    hdr = (HDR *) pak;
-    acct_pak = (struct acct *) (pak + TAC_PLUS_HDR_SIZE);
+    hdr = (HDR *)pak;
+    acct_pak = (struct acct *)(pak + TAC_PLUS_HDR_SIZE);
 
     /* Do some sanity checking on the packet */
+    /* Check if there's at least sizeof(struct acct) of useful data */
+    if (ntohl(hdr->datalength) < TAC_ACCT_REQ_FIXED_FIELDS_SIZE) {
+	report(LOG_ERR, "%s: acct minimum payload length: %zu, got: %u",
+	       session.peer, TAC_ACCT_REQ_FIXED_FIELDS_SIZE,
+	       ntohl(hdr->datalength));
+	send_error_reply(TAC_PLUS_ACCT, NULL);
+	return;
+    }
 
     /* arg counts start here */
     p = pak + TAC_PLUS_HDR_SIZE + TAC_ACCT_REQ_FIXED_FIELDS_SIZE;
@@ -48,7 +56,18 @@ accounting(u_char *pak)
     /* Length checks */
     len = TAC_ACCT_REQ_FIXED_FIELDS_SIZE;
     len += acct_pak->user_len + acct_pak->port_len +
-	acct_pak->rem_addr_len + acct_pak->arg_cnt;
+	   acct_pak->rem_addr_len + acct_pak->arg_cnt;
+
+    /* Is there enough space for acct_pak->length arguments */
+    if (ntohl(hdr->datalength) <
+	(TAC_ACCT_REQ_FIXED_FIELDS_SIZE + acct_pak->arg_cnt)) {
+	report(LOG_ERR, "%s: acct minimum payload: %zu, got: %u",
+	       session.peer, TAC_ACCT_REQ_FIXED_FIELDS_SIZE + acct_pak->arg_cnt,
+	       ntohl(hdr->datalength));
+	send_error_reply(TAC_PLUS_ACCT, NULL);
+	return;
+    }
+
     for (i = 0; i < (int)acct_pak->arg_cnt; i++) {
 	len += p[i];
     }
@@ -59,8 +78,6 @@ accounting(u_char *pak)
     }
 
     account(pak);
-
-    free(pak);
 }
 
 static void
@@ -73,7 +90,7 @@ account(u_char *pak)
     char **cmd_argp;
     int i, errors = 0, status;
 
-    acct_pak = (struct acct *) (pak + TAC_PLUS_HDR_SIZE);
+    acct_pak = (struct acct *)(pak + TAC_PLUS_HDR_SIZE);
 
     /* Fill out accounting record structure */
     memset(&rec, 0, sizeof(struct acct_rec));

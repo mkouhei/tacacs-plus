@@ -34,8 +34,6 @@
  * (which is 16 bytes long). The resulting hash can safely be used as
  * input to another call to create_md5_hash, as its contents are copied
  * before the new hash is generated.
- *
- *
  */
 void
 create_md5_hash(int session_id, char *key, u_char version, u_char seq_no,
@@ -49,7 +47,7 @@ create_md5_hash(int session_id, char *key, u_char version, u_char seq_no,
 	sizeof(seq_no);
 
     if (prev_hash) {
-	md_len += MD5_LEN;
+	md_len += TAC_MD5_DIGEST_LEN;
     }
     mdp = md_stream = (u_char *) tac_malloc(md_len);
     memcpy(mdp, &session_id, sizeof(session_id));
@@ -65,8 +63,8 @@ create_md5_hash(int session_id, char *key, u_char version, u_char seq_no,
     mdp += sizeof(seq_no);
 
     if (prev_hash) {
-	memcpy(mdp, prev_hash, MD5_LEN);
-	mdp += MD5_LEN;
+	memcpy(mdp, prev_hash, TAC_MD5_DIGEST_LEN);
+	mdp += TAC_MD5_DIGEST_LEN;
     }
     MD5Init(&mdcontext);
     MD5Update(&mdcontext, md_stream, md_len);
@@ -89,8 +87,8 @@ int
 md5_xor(HDR *hdr, u_char *data, char *key)
 {
     int i, j;
-    u_char hash[MD5_LEN];	/* the md5 hash */
-    u_char last_hash[MD5_LEN];	/* the last hash we generated */
+    u_char hash[TAC_MD5_DIGEST_LEN];	/* the md5 hash */
+    u_char last_hash[TAC_MD5_DIGEST_LEN];	/* the last hash we generated */
     u_char *prev_hashp = (u_char *) NULL;	/* pointer to last created
 						 * hash */
     int data_len;
@@ -107,7 +105,6 @@ md5_xor(HDR *hdr, u_char *data, char *key)
 	return(0);
 
     for (i = 0; i < data_len; i += 16) {
-
 	create_md5_hash(session_id, key, version, seq_no, prev_hashp, hash);
 
 	if (debug & DEBUG_MD5_HASH_FLAG) {
@@ -118,17 +115,17 @@ md5_xor(HDR *hdr, u_char *data, char *key)
 		   session_id, key, version, seq_no);
 	    if (prev_hashp) {
 		report(LOG_DEBUG, "prev_hash:");
-		for (k = 0; k < MD5_LEN; k++)
+		for (k = 0; k < TAC_MD5_DIGEST_LEN; k++)
 		    report(LOG_DEBUG, "0x%x", prev_hashp[k]);
 	    } else {
 		report(LOG_DEBUG, "no prev. hash");
 	    }
 
 	    report(LOG_DEBUG, "hash: ");
-	    for (k = 0; k < MD5_LEN; k++)
+	    for (k = 0; k < TAC_MD5_DIGEST_LEN; k++)
 		report(LOG_DEBUG, "0x%x", hash[k]);
-	}			/* debug */
-	memcpy(last_hash, hash, MD5_LEN);
+	}
+	memcpy(last_hash, hash, TAC_MD5_DIGEST_LEN);
 	prev_hashp = last_hash;
 
 	for (j = 0; j < 16; j++) {

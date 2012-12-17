@@ -601,18 +601,18 @@ A). Version F4.X contains mschap support. Mschap is configured the
     requires a key from Microsoft which is not public domain, but this can
     also be done on the NAS too, so you can live without it.
 
-    To compile the daemon with MSCHAP support, uncomment the MSCHAP line
-    in the Makefile. This will add the MSCHAP code to your daemon. You can
-    leave MSCHAP_DES undefined, in which case the MSCHAP DES calculation
-    will be done by NAS, and no special MSCHAP key will be required.
+    To compile the daemon with MSCHAP support, give configured the
+    --enable-mschap option.  This will add the MSCHAP code to your daemon.
+    You can leave MSCHAP_DES undefined (see configure --enable-mschapdes),
+    in which case the MSCHAP DES calculation will be done by NAS, and no
+    special MSCHAP key will be required.
 
-    If you have a DES library and want to use it with MSCHAP (this is more
-    efficient for authentication), then you can also uncomment the
-    MSCHAP_DES and MSCHAP_MD4_SRC lines in the Makefile. This will ensure
-    that the DES calculation done in the daemon. A key will need to be
-    obtained from Microsoft and used to replace the definition of
-    MSCHAP_KEY in the file mschap.h. If you're thinking by now that this
-    is all too much trouble, I can't say I blame you....
+    If want to use DES with MSCHAP (this is more efficient for
+    authentication), then you also give configure the --enable-mschapdes
+    option.  This will ensure that the DES calculation is done in the daemon.
+    A key will need to be obtained from Microsoft and used to replace the
+    definition of MSCHAP_KEY in the file mschap.h. If you're thinking by now
+    that this is all too much trouble, you're right.
 
 Q). Can I do wtmp-style logging like xtacacd used to do?
 A). Wtmp file logging is supported. The "-u <wtmpfilename>" command
@@ -630,3 +630,8 @@ A). Wtmp file logging is supported. The "-u <wtmpfilename>" command
 	aaa accounting exec stop-only tacacs+
 	aaa accounting network stop-only tacacs+
 	aaa accounting system start-stop tacacs+
+
+Q) How does TACACS compare to RADIUS?
+A) Cisco provided a good summary in general and somewhat specific to Cisco
+   products here:
+   http://www.cisco.com/en/US/tech/tk59/technologies_tech_note09186a0080094e99.shtml#comparing

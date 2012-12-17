@@ -1,1 +1,1 @@
-usr/lib/libtacacs*.so.*
+usr/lib/*/tacacs/libtacacs*.so.*

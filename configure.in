@@ -335,6 +335,48 @@ AC_SUBST(SKEY)
 AM_CONDITIONAL([TACSKEY], [test "${with_skey}" != "no"])
 
 dnl
+dnl aceclnt - aka RSA SecurID
+dnl
+AC_MSG_CHECKING([whether to include RSA SecurID support])
+AH_TEMPLATE(ACECLNT, [define this to include support for RSA SecurID])
+AC_ARG_WITH(aceclnt,
+	[AS_HELP_STRING([--with-aceclnt[[=PATH]]],[libaceclnt (RSA SecurID) support. PATH is dir above lib, eg: /usr/local])],
+[ case "$withval" in
+  no)
+    AC_MSG_RESULT(no)
+    ;;
+  yes)
+    AC_MSG_RESULT(yes)
+    AC_DEFINE(ACECLNT)
+    AC_SEARCH_LIBS([SD_Init], [aceclnt],
+        [ ],
+        [AC_MSG_ERROR(Could not find libaceclnt.  You must first install aceclnt or provide a hint to the location of library and includes, as in --with-aceclnt=/usr/local)])
+    ;;
+  *)
+    AC_MSG_RESULT(yes)
+    AC_DEFINE(ACECLNT)
+    if test -d "$withval" ; then
+	LDFAGS="$LDFLAGS -L$withval/lib"
+        CFLAGS="$CFLAGS -I$withval/include"
+        AC_SEARCH_LIBS([SD_Init], [aceclnt],
+            [ ],
+            [AC_MSG_ERROR([Could not find libaceclnt.])
+	])
+    else
+        AC_SEARCH_LIBS([SD_Init], [$withval],
+            [ ],
+            [AC_MSG_ERROR([Could not find lib$withval.])
+	])
+    fi
+    ;;
+  esac ],
+  AC_MSG_RESULT(no)
+  with_aceclnt="no"
+)
+AC_SUBST(ACECLNT)
+AM_CONDITIONAL([TACACECLNT], [test "${with_aceclnt}" != "no"])
+
+dnl
 dnl		XXX: might be good to have these as config file options
 dnl		     or just options for running scripts
 dnl userid - aka TACPLUS_USERID
@@ -502,6 +544,68 @@ AC_ARG_ENABLE(finger,
   AC_MSG_RESULT(no)
 )
 AC_SUBST(MAXSESS_FINGER)
+dnl
+dnl ARAP_DES - enable DES for ARAP
+dnl
+AC_MSG_CHECKING(whether to include ARAP DES support)
+AH_TEMPLATE(ARAP_DES, [Define this if you have DES routines you can link to for ARAP (See the user guide for more details)])
+AC_ARG_ENABLE(arapdes,
+[  --enable-arapdes        enable DES for ARAP],
+[ case "$enable_arapdes" in
+  yes)
+    AC_MSG_RESULT(yes)
+    AC_DEFINE(ARAP_DES)
+    ;;
+  * | no)
+    AC_MSG_RESULT(no)
+    ;;
+  esac ],
+  # ie: no --{enable,disable}-arapdes option, withval == ""
+  AC_MSG_RESULT(no)
+)
+AC_SUBST(ARAP_DES)
+dnl
+dnl MSCHAP - enable MSCHAP
+dnl
+AC_MSG_CHECKING(whether to include MSCHAP support)
+AH_TEMPLATE(MSCHAP, [Define this if you need MSCHAP support])
+AC_ARG_ENABLE(mschap,
+[  --enable-mschap        enable MSCHAP],
+[ case "$enable_mschap" in
+  yes)
+    AC_CHECK_HEADER(mschap_.h)
+    AC_MSG_RESULT(yes)
+    AC_DEFINE(MSCHAP)
+    ;;
+  * | no)
+    AC_MSG_RESULT(no)
+    ;;
+  esac ],
+  # ie: no --{enable,disable}-mschap option, withval == ""
+  AC_MSG_RESULT(no)
+)
+AC_SUBST(MSCHAP_)
+dnl
+dnl MSCHAP_DES - enable DES for MSCHAP
+dnl
+AC_MSG_CHECKING(whether to include MSCHAP DES support)
+AH_TEMPLATE(MSCHAP_DES, [Define this if you have DES routines you can link to for MSCHAP (See the user guide for more details)])
+AC_ARG_ENABLE(mschapdes,
+[  --enable-mschapdes        enable DES for MSCHAP],
+[ case "$enable_mschapdes" in
+  yes)
+    AC_CHECK_HEADER(mschap_des.h)
+    AC_MSG_RESULT(yes)
+    AC_DEFINE(MSCHAP_DES)
+    ;;
+  * | no)
+    AC_MSG_RESULT(no)
+    ;;
+  esac ],
+  # ie: no --{enable,disable}-mschapdes option, withval == ""
+  AC_MSG_RESULT(no)
+)
+AC_SUBST(MSCHAP_DES)
 
 dnl
 dnl pid file location
@@ -632,7 +736,7 @@ AC_HEADER_TIME
 AC_CHECK_HEADERS(crypt.h ctype.h errno.h fcntl.h malloc.h shadow.h stdlib.h \
 		stdint.h string.h strings.h sys/resource.h sys/socket.h \
 		sys/types.h sys/wait.h sysexits.h syslog.h termios.h unistd.h \
-		wait.h)
+		utmp.h utmpx.h wait.h)
 
 AH_TEMPLATE([SHADOW_PASSWORDS],
 	    [define if your system has a shadow password file])
@@ -662,8 +766,8 @@ AC_CHECK_TYPES([pid_t], [], [], [#if HAVE_SYS_TYPES_H
 #endif])
 
 # check functions
-AC_CHECK_FUNCS([getdtablesize memcpy memset strchr strcspn strerror strrchr \
-	        wait3 wait4 waitpid])
+AC_CHECK_FUNCS([getdtablesize memcpy memset random strchr strcspn strerror \
+		strrchr wait3 wait4 waitpid])
 AC_FUNC_SETPGRP
 
 # Is the wait(2) status an int or union
@@ -886,6 +990,45 @@ AH_BOTTOM([
 # define socklen_t	int
 #endif
 
+/* host specifics */
+/* Define this if your password file does not contain age and comment fields. */
+#define NO_PWAGE
+
+#if AIX
+/*
+ * The only way to properly compile BSD stuff on AIX is to define a
+ * "bsdcc" compiler on your system.  See /usr/lpp/bos/bsdport on your
+ * system for details. People who do NOT do this tell me that the code
+ * still compiles but that it then doesn't behave correctly e.g. child
+ * processes are not reaped correctly.  Don't expect much sympathy if
+ * you do this.
+ */
+# define _BSD 1
+# define _BSD_INCLUDES
+# define NO_PWAGE
+#endif	/* AIX */
+
+#if LINUX
+# define NO_PWAGE
+# include <unistd.h>
+# ifdef GLIBC
+#  define CONST_SYSERRLIST
+# endif
+#endif	/* LINUX */
+
+#if NETBSD
+# define NO_PWAGE
+# define CONST_SYSERRLIST
+#endif
+
+#if FREEBSD
+# define CONST_SYSERRLIST
+# define NO_PWAGE
+#endif
+
+#if BSDI
+# define NO_PWAGE
+#endif
 #endif /* CONFIG_H */
 ])
 AC_CONFIG_HEADERS(config.h)

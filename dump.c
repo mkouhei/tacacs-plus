@@ -134,8 +134,7 @@ dump_nas_pak(u_char *pak)
 
     seq = hdr->seq_no;
     if (seq % 2 != 1) {
-	report(LOG_DEBUG, "nas packets should be odd numbered seq=%d",
-	       seq);
+	report(LOG_DEBUG, "nas packets should be odd numbered seq=%d", seq);
 	exit(1);
     }
 
@@ -407,7 +406,7 @@ dump_nas_pak(u_char *pak)
 	    report(LOG_DEBUG, "arg[%d]: size=%d ", i, *argsizep);
 	    if (resid < 1 + *argsizep) {
 		report(LOG_DEBUG, "ACCT arg %d data length (%d) exceeds packet "
-		      "length %d", i, (1 + *argsizep), resid);
+		       "length %d", i, (1 + *argsizep), resid);
 		return;
 	    }
 	    resid -= 1 + *argsizep;
@@ -509,8 +508,8 @@ dump_tacacs_pak(u_char *pak)
 	acct = (struct acct_reply *) (pak + TAC_PLUS_HDR_SIZE);
 	report(LOG_DEBUG, "ACCT/REPLY status=%d", acct->status);
 
-	report(LOG_DEBUG, "msg_len=%d data_len=%d",
-	       acct->msg_len, acct->data_len);
+	report(LOG_DEBUG, "msg_len=%d data_len=%d", acct->msg_len,
+	       acct->data_len);
 
 	p = pak + TAC_PLUS_HDR_SIZE + TAC_ACCT_REPLY_FIXED_FIELDS_SIZE;
 

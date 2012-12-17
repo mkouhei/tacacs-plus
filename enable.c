@@ -80,7 +80,7 @@ enable(char *passwd, struct authen_data *data)
     if (level < TAC_PLUS_PRIV_LVL_MAX) {
 	char buf[11];
 
-	sprintf(buf, "$enab%d$", level);
+	snprintf(buf, sizeof(buf), "$enab%d$", level);
 	if (!verify(buf, passwd, data, TAC_PLUS_NORECURSE))
 	    data->status = TAC_PLUS_AUTHEN_STATUS_FAIL;
 	goto SUCCESS;

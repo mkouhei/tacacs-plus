@@ -20,7 +20,14 @@
  */
 
 #include "tac_plus.h"
-#include "regexp.h"
+#include <regex.h>
+#ifndef REG_OK
+# ifdef REG_NOERROR
+#  define REG_OK REG_NOERROR
+# else
+#  define REG_OK 0
+# endif
+#endif
 
 static int arg_ok(char *);
 static char *assemble_args(struct author_data *);
@@ -58,30 +65,6 @@ do_author(struct author_data *data)
 
     if (debug & DEBUG_AUTHOR_FLAG)
 	report(LOG_DEBUG, "do_author: user='%s'", username);
-
-    /* If this user doesn't exist in our configs, do the default */
-    if (!cfg_user_exists(username) && !cfg_user_exists(DEFAULT_USERNAME)) {
-	if (debug & DEBUG_AUTHOR_FLAG)
-	    report(LOG_DEBUG, "do_author: user '%s' nor 'DEFAULT' exist",
-		   username);
-
-	if (cfg_no_user_permitted()) {
-	    if (debug & DEBUG_AUTHOR_FLAG)
-		report(LOG_DEBUG, "user '%s' or '%s' not found, permitted by "
-		       "default", username, DEFAULT_USERNAME);
-
-	    data->status = AUTHOR_STATUS_PASS_ADD;
-	    data->output_args = NULL;
-	    data->num_out_args = 0;
-	    return(0);
-	}
-
-	if (debug & DEBUG_AUTHOR_FLAG)
-	    report(LOG_DEBUG, "user '%s' or '%s' not found, denied by default",
-		   username, DEFAULT_USERNAME);
-	data->status = AUTHOR_STATUS_FAIL;
-	return(0);
-    }
 
     if (!cfg_user_exists(username) && cfg_user_exists(DEFAULT_USERNAME)) {
 	if (debug & DEBUG_AUTHOR_FLAG) {
@@ -489,6 +472,7 @@ authorize_exec(char *user, struct author_data *data)
 static int
 authorize_cmd(char *user, char *cmd, struct author_data *data)
 {
+    char buf[256];
     NODE *node;
     char *args;
     int match;
@@ -535,9 +519,8 @@ authorize_cmd(char *user, char *cmd, struct author_data *data)
     /* The command exists. The default if nothing matches is DENY */
     data->status = AUTHOR_STATUS_FAIL;
     data->num_out_args = 0;
-
     for (node = node->value1; node && args; node = node->next) {
-	match = regexec((regexp *) node->value1, args);
+	match = regexec((regex_t *)node->value1, args, 0, NULL, 0);
 
 	if (debug & DEBUG_AUTHOR_FLAG) {
 	    report(LOG_INFO, "line %d compare %s %s '%s' & '%s' %smatch",
@@ -546,8 +529,14 @@ authorize_cmd(char *user, char *cmd, struct author_data *data)
 		   node->value, args, (match ? "" : "no "));
 	}
 
-	if (!match)
+	if (match == REG_NOMATCH)
 	    continue;
+	if (match != REG_OK) {
+	    regerror(match, (regex_t *)node->value1, buf, 256);
+	    report(LOG_INFO, "regexec error: %s on line %d: %s",
+		   (char *)node->value, node->line, buf);
+	    continue;
+	}
 
 	switch (node->type) {
 	case N_permit:
@@ -736,7 +725,6 @@ authorize_svc(char *user, int svc, char *protocol, char *svcname,
 	 * we'll allow it. */
 
 	if (cfg_user_svc_default_is_permit(user)) {
-
 	    if (debug & DEBUG_AUTHOR_FLAG)
 		report(LOG_DEBUG, "svc=%s protocol=%s svcname=%s not found, "
 		       "permitted by default", cfg_nodestring(svc),
@@ -772,7 +760,8 @@ authorize_svc(char *user, int svc, char *protocol, char *svcname,
     for (i = 0; i < data->num_in_args; i++) {
 	if (!arg_ok(data->input_args[i])) {
 	    char buf[MAX_INPUT_LINE_LEN+50];
-	    sprintf(buf, "Illegal arg %s from NAS", data->input_args[i]);
+	    snprintf(buf, sizeof(buf), "Illegal arg %s from NAS",
+		     data->input_args[i]);
 	    data->status = AUTHOR_STATUS_ERROR;
 	    data->admin_msg = tac_strdup(buf);
 	    report(LOG_ERR, "%s: Error %s", session.peer, buf);
@@ -791,7 +780,7 @@ authorize_svc(char *user, int svc, char *protocol, char *svcname,
 
     /* Allocate space for in + out args */
     max_args = cfg_cnt + data->num_in_args;
-    out_args = (char **) tac_malloc((max_args + 1) * sizeof(char *));
+    out_args = (char **)tac_malloc((max_args + 1) * sizeof(char *));
     outp = out_args;
     data->num_out_args = 0;
 
@@ -893,7 +882,6 @@ authorize_svc(char *user, int svc, char *protocol, char *svcname,
 	    *outp++ = tac_strdup(nas_arg);
 	    data->num_out_args++;
 	    goto next_nas_arg;
-
 	} else {
 	    /*
 	     * NAS AV pair is Optional
@@ -1009,7 +997,6 @@ authorize_svc(char *user, int svc, char *protocol, char *svcname,
 	    goto next_nas_arg;
 	}
     next_nas_arg:;
-
     }
 
     /*

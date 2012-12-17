@@ -1,3 +1,2 @@
 usr/include/*
-usr/lib/libtacacs*.so
-usr/share/man/man3
+usr/lib/*/tacacs/libtacacs*.so

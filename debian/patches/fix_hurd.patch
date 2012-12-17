@@ -1,0 +1,23 @@
+Index: tacacs+-4.0.4.25/configure
+===================================================================
+--- tacacs+-4.0.4.25.orig/configure	2012-06-02 13:42:04.400049641 +0000
++++ tacacs+-4.0.4.25/configure	2012-06-02 13:43:08.460052710 +0000
+@@ -3160,6 +3160,18 @@
+         $as_echo "#define MIPS 1" >>confdefs.h
+ 
+     ;;
++    *gnu* )
++	# XXX: not sure if /usr/local is necessary.
++	# XXX: linux libwrap needs -lnsl. configure should check for
++	#      existence of libnsl instead of hard-coding
++	CPPFLAGS="$CFLAGS -I/usr/local/include"; export CPPFLAGS
++	LDFLAGS="$LDFLAGS -L/usr/local/lib -L/lib"; export LDFLAGS
++	LIBS="-lnsl -lcrypt $LIBS"; export LIBS
++        cat >>confdefs.h <<\_ACEOF
++#define LINUX 1
++_ACEOF
++
++    ;;
+     * )
+ 	CPPFLAGS="$CFLAGS -I/usr/local/include"; export CPPFLAGS
+ 	LDFLAGS="$LDFLAGS -L/usr/local/lib"; export LDFLAGS

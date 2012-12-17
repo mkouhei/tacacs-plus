@@ -2,29 +2,33 @@ Source: tacacs+
 Section: net
 Priority: extra
 Maintainer: Henry-Nicolas Tourneur <henry.nicolas@tourneur.be>
-Build-Depends: debhelper (>= 7), autotools-dev, flex, m4, bison, libwrap0-dev, libpam0g-dev, dpatch
-Standards-Version: 3.9.2
+Build-Depends: debhelper (>= 9), dpkg-dev (>= 1.16.2), autotools-dev, flex, m4, bison, libwrap0-dev, libpam0g-dev, quilt, hardening-wrapper, chrpath
+Standards-Version: 3.9.3
 Homepage: http://www.shrubbery.net/tac_plus/
 
 Package: tacacs+
 Architecture: any
-Depends: ${misc:Depends}, ${shlibs:Depends}, libwrap0, libpam0g, adduser, libtacacs+1, python
+Depends: ${misc:Depends}, ${shlibs:Depends}, libwrap0, libpam0g, libtacacs+1 (>= 4.0.4.25-1), python
 Description: TACACS+ authentication daemon
  TACACS+ is a protocol (not TACACS or XTACACS) for authentication, 
  authorization and accounting (AAA) services for routers and network devices.
 
 Package: libtacacs+1
 Architecture: any
-Depends: ${misc:Depends}, ${shlibs:Depends}, libwrap0, libpam0g, adduser
+Multi-Arch: foreign
+Depends: ${misc:Depends}, ${shlibs:Depends}, libwrap0
+Pre-Depends: ${misc:Pre-Depends}
 Description: TACACS+ authentication daemon
  TACACS+ is a protocol (not TACACS or XTACACS) for authentication, 
  authorization and accounting (AAA) services for routers and network devices.
  This package include the library used by the Daemon.
 
 Package: libtacacs+1-dev
-Architecture: all
+Architecture: any
+Multi-Arch: foreign
 Section: libdevel
 Depends: ${misc:Depends}, libtacacs+1 (>= ${source:Upstream-Version}), libtacacs+1 (<< ${source:Upstream-Version}+1~)
+Pre-Depends: ${misc:Pre-Depends}
 Description: TACACS+ authentication daemon
  TACACS+ is a protocol (not TACACS or XTACACS) for authentication, 
  authorization and accounting (AAA) services for routers and network devices.

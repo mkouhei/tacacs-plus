@@ -20,6 +20,7 @@
  */
 
 #include "tac_plus.h"
+#include <limits.h>
 #include <time.h>
 #if defined(__DragonFly__) && !defined(O_SYNC)
 #define	O_SYNC	O_FSYNC
@@ -69,9 +70,11 @@ do_acct_file(struct acct_rec *rec)
 {
     int i, errors;
     time_t t = time(NULL);
-    char *ct = ctime(&t);
+    char ct[LINE_MAX];
+    struct tm *tm;
 
-    ct[24] = '\0';
+    tm = localtime(&t);
+    strftime(ct, LINE_MAX, "%h %e %T", tm);
 
     if (!acctfd) {
 	acctfd = open(session.acctfile, O_CREAT | O_WRONLY | O_APPEND, 0644);
@@ -202,11 +205,18 @@ do_acct_syslog(struct acct_rec *rec)
 int
 wtmp_entry(char *line, char *name, char *host, time_t utime)
 {
+#if HAVE_UTMP_H
     struct utmp entry;
+#elif HAVE_UTMPX_H
+    struct utmpx entry;
+#endif
 
     if (!wtmpfile) {
 	return(1);
     }
+#if HAVE_UTMPX_H  && !HAVE_UTMP_H
+# define ut_name	ut_user
+#endif
 
     memset(&entry, 0, sizeof entry);
 
@@ -226,7 +236,13 @@ wtmp_entry(char *line, char *name, char *host, time_t utime)
     else
 	memcpy(entry.ut_host, host, sizeof(entry.ut_host));
 #endif
+#if HAVE_UTMP_H
     entry.ut_time = utime;
+#elif HAVE_UTMPX_H
+    entry.ut_tv.tv_sec = utime;
+#else
+# error "unknown utmp time field"
+#endif
 
 #ifdef FREEBSD
     wtmpfd = open(wtmpfile, O_CREAT | O_WRONLY | O_APPEND, 0644);

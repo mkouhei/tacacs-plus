@@ -20,7 +20,14 @@
  */
 
 #include "tac_plus.h"
-#include "regexp.h"
+#include <regex.h>
+#ifndef REG_OK
+# ifdef REG_NOERROR
+#  define REG_OK REG_NOERROR
+# else
+#  define REG_OK 0
+# endif
+#endif
 
 /*
    <config>		:=	<decl>*
@@ -34,7 +41,6 @@
    <top_level_decl>	:=	<authen_default> |
 				accounting file = <filename> |
 				accounting syslog |
-				default authorization = <permission> |
 				key = <string> |
 				logging = <syslog_fac>
 
@@ -52,8 +58,9 @@
    <host_decl>		:=	host = <string> {
 					key = <string>
 					prompt = <string>
-					enable = (file|skey|cleartext|des|
-						  nopassword) <filename/string>
+					enable = aceclnt|cleartext|des|
+						 file <filename/string>|
+						 nopassword|skey
 				}
 
    <user_decl>		:=	user = <string> {
@@ -62,12 +69,17 @@
 					<svc>*
 				}
 
-   <password_spec>	:=	file <filename> |
-				skey |
+   <password_spec>	:=	nopassword |
+#ifdef ACECLNT
+				aceclnt|
+#endif
 				cleartext <password> |
 				des <password> |
+				file <filename> |
+#ifdef HAVE_PAM
 				PAM |
-				nopassword
+#endif
+				skey
 
    <user_attr>		:=	name	= <string> |
 				login	= <password_spec> |
@@ -80,6 +92,9 @@
 #endif
 				pap	= cleartext <string> |
 				pap	= des <string> |
+#ifdef HAVE_PAM
+				pap	= PAM |
+#endif
 				opap	= cleartext <string> |
 				global	= cleartext <string> |
 				msg	= <string>
@@ -94,8 +109,12 @@
 
    <cmd-match>		:=	<permission> <string>
 
-   <svc_auth>		:=	service = ( exec | arap | slip |
-					    ppp protocol = <string>) {
+   <proto>		:=	XXX define this
+
+   <svc_auth>		:=	service = ( arap | connection | exec |
+					    ppp protocol = <proto> | shell |
+					    slip | system | tty-daemon |
+					    <client defined> ) {
 					[ default attribute = permit ]
 					<attr_value_pair>*
 				}
@@ -111,7 +130,6 @@ static int sym_code;				/* parser output */
 static int sym_line = 1;			/* current line number */
 static FILE *cf = NULL;				/* config file pointer */
 static int sym_error = 0;			/* a parsing error occurred */
-static int no_user_dflt = 0;		/* default if user doesn't exist */
 static char *authen_default = NULL;	/* top level authentication default */
 static char *nopasswd_str = "nopassword";
 
@@ -179,39 +197,35 @@ typedef struct user {
     int maxsess;		/* Max sessions/user */
 #endif /* MAXSESS */
 } USER;
+typedef USER GROUP;
 
 #ifdef ACLS
-struct filter {
+typedef struct filter {
     int isdeny;
     char *string;
-    regexp *string_reg;
+    regex_t *string_reg;
     struct filter *next;
-};
-typedef struct filter FILTER;
+} FILTER;
 
-struct acl {
+typedef struct acl {
     char *name;			/* acl name */
     void *hash;			/* hash table next pointer */
     int line;			/* line number defined on */
     NODE *nodes;		/* list of entrys */
-};
-
-typedef struct acl ACL;
+} ACL;
 #endif
 
 /*
  * Only the first 2 fields (name and hash) are used by the hash table
  * routines to hash structures into a table.
  */
-union hash {
+typedef union hash {
     struct user u;
 #ifdef ACLS
     struct acl a;
 #endif
     struct host h;
-};
-
-typedef union hash HASH;
+} HASH;
 
 void *grouptable[HASH_TAB_SIZE];/* Table of group declarations */
 void *usertable[HASH_TAB_SIZE];	/* Table of user declarations */
@@ -524,7 +538,7 @@ cfg_clean_config(void)
 #ifdef ACLS
     /* clean the acltable */
     for (i = 0; i < HASH_TAB_SIZE; i++) {
-	aentry = (ACL *) acltable[i];
+	aentry = (ACL *)acltable[i];
 	while (aentry) {
 	    anext = aentry->hash;
 	    free_aclstruct(aentry);
@@ -537,7 +551,7 @@ cfg_clean_config(void)
 
     /* the grouptable */
     for (i = 0; i < HASH_TAB_SIZE; i++) {
-	entry = (USER *) grouptable[i];
+	entry = (USER *)grouptable[i];
 	while (entry) {
 	    next = entry->hash;
 	    free_userstruct(entry);
@@ -549,7 +563,7 @@ cfg_clean_config(void)
 
     /* clean the hosttable */
     for (i = 0; i < HASH_TAB_SIZE; i++) {
-	host_entry = (HOST *) hosttable[i];
+	host_entry = (HOST *)hosttable[i];
 	while (host_entry) {
 	    hn = host_entry->hash;
 	    free_hoststruct(host_entry);
@@ -561,7 +575,7 @@ cfg_clean_config(void)
 
     /* the usertable */
     for (i = 0; i < HASH_TAB_SIZE; i++) {
-	entry = (USER *) usertable[i];
+	entry = (USER *)usertable[i];
 	while (entry) {
 	    next = entry->hash;
 	    free_userstruct(entry);
@@ -636,8 +650,10 @@ parse_opt_attr_default(void)
 static int
 insert_acl_entry(ACL *acl, int isdeny)
 {
+    char buf[256];
     NODE *next = acl->nodes;
-    NODE *entry = (NODE *) tac_malloc(sizeof(NODE));
+    NODE *entry = (NODE *)tac_malloc(sizeof(NODE));
+    int ecode;
 
     memset(entry, 0, sizeof(NODE));
 
@@ -646,9 +662,13 @@ insert_acl_entry(ACL *acl, int isdeny)
     entry->line = sym_line;
 
     /* compile the regex */
-    entry->value1 = (void *) regcomp((char *) entry->value);
-    if (!entry->value1) {
+    entry->value1 = tac_malloc(sizeof(regex_t));
+    ecode = regcomp((regex_t *)entry->value1, (char *)entry->value,
+		    (REG_EXTENDED | REG_NOSUB));
+    if (ecode) {
+	regerror(ecode, (regex_t *)entry->value1, buf, 256);
 	report(LOG_ERR, "in regex %s on line %d", sym_buf, sym_line);
+	report(LOG_ERR, "regex compile failed: %s", buf);
 	tac_exit(1);
     }
 
@@ -670,7 +690,7 @@ static int
 parse_acl(void)
 {
     ACL *n;
-    ACL *acl = (ACL *) tac_malloc(sizeof(ACL));
+    ACL *acl = (ACL *)tac_malloc(sizeof(ACL));
     int isdeny = S_permit;
 
     memset(acl, 0, sizeof(ACL));
@@ -680,7 +700,7 @@ parse_acl(void)
     acl->name = tac_strdup(sym_buf);
     acl->line = sym_line;
 
-    n = hash_add_entry(acltable, (void *) acl);
+    n = hash_add_entry(acltable, (void *)acl);
 
     if (n) {
 	parse_error("multiply defined acl %s on lines %d and %d", acl->name,
@@ -726,7 +746,6 @@ parse_acl(void)
 static int
 parse_decls()
 {
-    no_user_dflt = 0; /* default if user doesn't exist */
 
     sym_code = 0;
     rch();
@@ -771,8 +790,8 @@ parse_decls()
 	    sym_get();
 	    switch (sym_code) {
 	    default:
-		parse_error("Expecting default authorization/authentication "
-			    "on lines %d", sym_line);
+		parse_error("Expecting default authentication on line %d",
+			    sym_line);
 		return(1);
 
 	    case S_authentication:
@@ -786,15 +805,6 @@ parse_decls()
 		parse(S_file);
 		authen_default = tac_strdup(sym_buf);
 		sym_get();
-		continue;
-
-	    case S_authorization:
-		parse(S_authorization);
-		parse(S_separator);
-		parse(S_permit);
-		no_user_dflt = S_permit;
-		report(LOG_NOTICE, "default authorization = permit is now "
-			"deprecated. Please use user = DEFAULT instead");
 		continue;
 	    }
 
@@ -865,7 +875,7 @@ parse_host(void)
     host->name = tac_strdup(sym_buf);
     host->line = sym_line;
 
-    h = hash_add_entry(hosttable, (void *) host);
+    h = hash_add_entry(hosttable, (void *)host);
 
     if (h) {
 	parse_error("multiply defined %s on lines %d and %d", host->name,
@@ -996,7 +1006,7 @@ parse_user(void)
 {
     USER *n;
     int isuser;
-    USER *user = (USER *) tac_malloc(sizeof(USER));
+    USER *user = (USER *)tac_malloc(sizeof(USER));
     int save_sym;
     char **fieldp;
     char buf[MAX_INPUT_LINE_LEN];
@@ -1013,10 +1023,10 @@ parse_user(void)
 
     if (isuser) {
 	user->flags |= FLAG_ISUSER;
-	n = hash_add_entry(usertable, (void *) user);
+	n = hash_add_entry(usertable, (void *)user);
     } else {
 	user->flags |= FLAG_ISGROUP;
-	n = hash_add_entry(grouptable, (void *) user);
+	n = hash_add_entry(grouptable, (void *)user);
     }
 
     if (n) {
@@ -1056,7 +1066,6 @@ parse_user(void)
 
 	case S_svc:
 	case S_cmd:
-
 	    if (user->svcs) {
 		/*
 		 * Already parsed some services/commands. Thanks to Gabor Kiss
@@ -1084,6 +1093,12 @@ parse_user(void)
 
 #ifdef SKEY
 	    case S_skey:
+		user->login = tac_strdup(sym_buf);
+		break;
+#endif
+
+#ifdef ACECLNT
+	    case S_aceclnt:
 		user->login = tac_strdup(sym_buf);
 		break;
 #endif
@@ -1117,6 +1132,9 @@ parse_user(void)
 #ifdef SKEY
 			    "'skey', "
 #endif
+#ifdef ACECLNT
+			    "'aceclnt', "
+#endif
 #ifdef HAVE_PAM
 			    "'PAM', "
 #endif
@@ -1137,6 +1155,13 @@ parse_user(void)
 	    parse(S_separator);
 	    switch(sym_code) {
 
+#ifdef HAVE_PAM
+	    case S_pam:
+		user->pap = tac_strdup(sym_buf);
+		break;
+#endif
+
+	    case S_file:
 	    case S_cleartext:
 	    case S_des:
 		sprintf(buf, "%s ", sym_buf);
@@ -1146,7 +1171,11 @@ parse_user(void)
 		break;
 
 	    default:
-		parse_error("expecting 'cleartext', or 'des' keyword after "
+		parse_error("expecting 'cleartext', "
+#ifdef HAVE_PAM
+			    "'PAM', "
+#endif
+			    "or 'des' keyword after "
 			    "'pap =' on line %d", sym_line);
 	    }
 	    sym_get();
@@ -1186,11 +1215,19 @@ parse_user(void)
 		    user->enable = tac_strdup(sym_buf);
 		    break;
 #endif
+#ifdef ACECLNT
+		case S_aceclnt:
+		    user->enable = tac_strdup(sym_buf);
+		    break;
+#endif
 
 		default:
 		    parse_error("expecting 'file', 'cleartext', 'nopassword', "
 #ifdef SKEY
 				"'skey', "
+#endif
+#ifdef ACECLNT
+				"'aceclnt', "
 #endif
 				"or 'des' keyword after 'enable =' on line %d",
 				sym_line);
@@ -1305,7 +1342,7 @@ parse_svcs(void)
 	break;
     }
 
-    result = (NODE *) tac_malloc(sizeof(NODE));
+    result = (NODE *)tac_malloc(sizeof(NODE));
 
     memset(result, 0, sizeof(NODE));
     result->line = sym_line;
@@ -1331,14 +1368,9 @@ parse_svcs(void)
     parse(S_svc);
     parse(S_separator);
     switch (sym_code) {
-    default:
-	parse_error("expecting service type but found %s on line %d",
-		    sym_buf, sym_line);
-	return(NULL);
-
     case S_string:
 	result->type = N_svc;
-	/* should perhaps check that this is an allowable service name */
+	/* XXX should perhaps check that this is an allowable service name */
 	result->value1 = tac_strdup(sym_buf);
 	break;
     case S_exec:
@@ -1355,9 +1387,13 @@ parse_svcs(void)
 	parse(S_ppp);
 	parse(S_protocol);
 	parse(S_separator);
-	/* Should perhaps check that this is a known PPP protocol name */
+	/* XXX Should perhaps check that this is a known PPP protocol name */
 	result->value1 = tac_strdup(sym_buf);
 	break;
+    default:
+	parse_error("expecting service type but found %s on line %d",
+		    sym_buf, sym_line);
+	return(NULL);
     }
     sym_get();
     parse(S_openbra);
@@ -1372,12 +1408,14 @@ parse_svcs(void)
 static NODE *
 parse_cmd_matches(void)
 {
+    char buf[256];
     NODE *result;
+    int ecode;
 
     if (sym_code != S_permit && sym_code != S_deny) {
 	return(NULL);
     }
-    result = (NODE *) tac_malloc(sizeof(NODE));
+    result = (NODE *)tac_malloc(sizeof(NODE));
 
     memset(result, 0, sizeof(NODE));
     result->line = sym_line;
@@ -1385,10 +1423,13 @@ parse_cmd_matches(void)
     result->type = (parse_permission() == S_permit) ? N_permit : N_deny;
     result->value = tac_strdup(sym_buf);
 
-    result->value1 = (void *) regcomp(result->value);
-    if (!result->value1) {
-	report(LOG_ERR, "in regular expression %s on line %d",
-	       sym_buf, sym_line);
+    result->value1 = tac_malloc(sizeof(regex_t));
+    ecode = regcomp((regex_t *)result->value1, (char *)result->value,
+		    (REG_EXTENDED | REG_NOSUB));
+    if (ecode) {
+	regerror(ecode, (regex_t *)result->value1, buf, 256);
+	report(LOG_ERR, "in regex %s on line %d", sym_buf, sym_line);
+	report(LOG_ERR, "regex compile failed: %s", buf);
 	tac_exit(1);
     }
     sym_get();
@@ -1408,7 +1449,7 @@ parse_attrs(void)
     if (sym_code == S_closebra) {
 	return(NULL);
     }
-    result = (NODE *) tac_malloc(sizeof(NODE));
+    result = (NODE *)tac_malloc(sizeof(NODE));
 
     memset(result, 0, sizeof(NODE));
     result->line = sym_line;
@@ -1735,9 +1776,11 @@ get_hvalue(HOST *host, int field)
 	    v.pval = host->key;
 	    break;
 
-	/*case S_type:
+	/* XXX
+	case S_type:
 	    v.pval = host->type;
-	    break;*/
+	    break;
+	 */
 
 	case S_prompt:
 	    v.pval = host->prompt;
@@ -1768,8 +1811,8 @@ static int
 circularity_check(void)
 {
     USER *user, *entry, *group;
-    USER **users = (USER **) hash_get_entries(usertable);
-    USER **groups = (USER **) hash_get_entries(grouptable);
+    USER **users = (USER **)hash_get_entries(usertable);
+    USER **groups = (USER **)hash_get_entries(grouptable);
     USER **p, **q;
 
     /* users */
@@ -1800,7 +1843,7 @@ circularity_check(void)
 	    if (!groupname)
 		break;
 
-	    group = (USER *) hash_lookup(grouptable, groupname);
+	    group = (USER *)hash_lookup(grouptable, groupname);
 	    if (!group) {
 		report(LOG_ERR, "%s=%s, group %s does not exist",
 		       (entry->flags & FLAG_ISUSER) ? "user" : "group",
@@ -1854,7 +1897,7 @@ cfg_get_value(char *name, int isuser, int attr, int recurse)
 	       name, isuser, codestring(attr), recurse);
 
     /* find the user/group entry */
-    user = (USER *) hash_lookup(isuser ? usertable : grouptable, name);
+    user = (USER *)hash_lookup(isuser ? usertable : grouptable, name);
 
     if (!user) {
 	if (debug & DEBUG_CONFIG_FLAG)
@@ -1870,7 +1913,7 @@ cfg_get_value(char *name, int isuser, int attr, int recurse)
     }
     /* no value. Check containing group */
     if (user->member)
-	group = (USER *) hash_lookup(grouptable, user->member);
+	group = (USER *)hash_lookup(grouptable, user->member);
     else
 	group = NULL;
 
@@ -1885,7 +1928,7 @@ cfg_get_value(char *name, int isuser, int attr, int recurse)
 	/* still nothing. Check containing group and so on */
 
 	if (group->member)
-	    group = (USER *) hash_lookup(grouptable, group->member);
+	    group = (USER *)hash_lookup(grouptable, group->member);
 	else
 	    group = NULL;
     }
@@ -1909,7 +1952,7 @@ cfg_get_hvalue(char *name, int attr)
 							name, codestring(attr));
 
     /* find the host entry in hash table */
-    host = (HOST *) hash_lookup(hosttable, name);
+    host = (HOST *)hash_lookup(hosttable, name);
 
     if (!host) {
 	if (debug & DEBUG_CONFIG_FLAG)
@@ -2003,7 +2046,7 @@ cfg_user_exists(char *username)
 {
     USER *user;
 
-    user = (USER *) hash_lookup(usertable, username);
+    user = (USER *)hash_lookup(usertable, username);
 
     return(user != NULL);
 }
@@ -2030,7 +2073,7 @@ cfg_acl_check(char *aclname, char *ip)
     NODE *next;
     ACL *acl;
 
-    acl = (ACL *) hash_lookup(acltable, aclname);
+    acl = (ACL *)hash_lookup(acltable, aclname);
 
     if (debug & DEBUG_AUTHEN_FLAG)
 	report(LOG_DEBUG, "cfg_acl_check(%s, %s)", aclname, ip);
@@ -2042,7 +2085,7 @@ cfg_acl_check(char *aclname, char *ip)
 
     next = acl->nodes;
     while (next) {
-	if (regexec(next->value1, ip)) {
+	if (regexec((regex_t *)next->value1, ip, 0, NULL, 0) == REG_OK) {
 	    if (debug & DEBUG_AUTHEN_FLAG)
 		report(LOG_DEBUG, "ip %s matched %s regex %s of acl filter %s",
 			ip, next->type == S_deny ? "deny" : "permit",
@@ -2197,7 +2240,7 @@ cfg_get_svc_node(char *username, int type, char *protocol, char *svcname,
 	       svcname ? svcname : "", recurse);
 
     /* find the user/group entry */
-    user = (USER *) hash_lookup(usertable, username);
+    user = (USER *)hash_lookup(usertable, username);
 
     if (!user) {
 	if (debug & DEBUG_CONFIG_FLAG)
@@ -2206,7 +2249,7 @@ cfg_get_svc_node(char *username, int type, char *protocol, char *svcname,
     }
 
     /* found the user entry. Find svc node */
-    for (svc = (NODE *) get_value(user, S_svc).pval; svc; svc = svc->next) {
+    for (svc = (NODE *)get_value(user, S_svc).pval; svc; svc = svc->next) {
 
 	if (svc->type != type)
 	    continue;
@@ -2237,7 +2280,7 @@ cfg_get_svc_node(char *username, int type, char *protocol, char *svcname,
 
     /* no matching node. Check containing group */
     if (user->member)
-	group = (USER *) hash_lookup(grouptable, user->member);
+	group = (USER *)hash_lookup(grouptable, user->member);
     else
 	group = NULL;
 
@@ -2246,7 +2289,7 @@ cfg_get_svc_node(char *username, int type, char *protocol, char *svcname,
 	    report(LOG_DEBUG, "cfg_get_svc_node: recurse group = %s",
 		   group->name);
 
-	for (svc = (NODE *) get_value(group, S_svc).pval; svc; svc = svc->next) {
+	for (svc = (NODE *)get_value(group, S_svc).pval; svc; svc = svc->next) {
 
 	    if (svc->type != type)
 		continue;
@@ -2271,7 +2314,7 @@ cfg_get_svc_node(char *username, int type, char *protocol, char *svcname,
 	/* still nothing. Check containing group and so on */
 
 	if (group->member)
-	    group = (USER *) hash_lookup(grouptable, group->member);
+	    group = (USER *)hash_lookup(grouptable, group->member);
 	else
 	    group = NULL;
     }
@@ -2298,7 +2341,7 @@ cfg_get_cmd_node(char *name, char *cmdname, int recurse)
 	       name, cmdname, recurse);
 
     /* find the user/group entry */
-    user = (USER *) hash_lookup(usertable, name);
+    user = (USER *)hash_lookup(usertable, name);
 
     if (!user) {
 	if (debug & DEBUG_CONFIG_FLAG)
@@ -2306,7 +2349,7 @@ cfg_get_cmd_node(char *name, char *cmdname, int recurse)
 	return(NULL);
     }
     /* found the user entry. Find svc node */
-    svc = (NODE *) get_value(user, S_svc).pval;
+    svc = (NODE *)get_value(user, S_svc).pval;
 
     while (svc) {
 	if (svc->type == N_svc_cmd && STREQ(svc->value, cmdname)) {
@@ -2325,7 +2368,7 @@ cfg_get_cmd_node(char *name, char *cmdname, int recurse)
     }
     /* no matching node. Check containing group */
     if (user->member)
-	group = (USER *) hash_lookup(grouptable, user->member);
+	group = (USER *)hash_lookup(grouptable, user->member);
     else
 	group = NULL;
 
@@ -2349,7 +2392,7 @@ cfg_get_cmd_node(char *name, char *cmdname, int recurse)
 	/* still nothing. Check containing group and so on */
 
 	if (group->member)
-	    group = (USER *) hash_lookup(grouptable, group->member);
+	    group = (USER *)hash_lookup(grouptable, group->member);
 	else
 	    group = NULL;
     }
@@ -2388,7 +2431,7 @@ cfg_get_svc_attrs(NODE *svcnode, int *denyp)
     for (node = svcnode->value; node; node = node->next)
 	i++;
 
-    args = (char **) tac_malloc(sizeof(char *) * (i + 1));
+    args = (char **)tac_malloc(sizeof(char *) * (i + 1));
 
     i = 0;
     for (node = svcnode->value; node; node = node->next) {
@@ -2419,14 +2462,6 @@ cfg_user_svc_default_is_permit(char *user)
     }
 }
 
-int
-cfg_no_user_permitted(void)
-{
-    if (no_user_dflt == S_permit)
-	return(1);
-    return(0);
-}
-
 char *
 cfg_get_authen_default(void)
 {
@@ -2448,7 +2483,7 @@ cfg_ppp_is_configured(char *username, int recurse)
 	       username, recurse);
 
     /* find the user/group entry */
-    user = (USER *) hash_lookup(usertable, username);
+    user = (USER *)hash_lookup(usertable, username);
 
     if (!user) {
 	if (debug & DEBUG_CONFIG_FLAG)
@@ -2458,7 +2493,7 @@ cfg_ppp_is_configured(char *username, int recurse)
     }
 
     /* found the user entry. Find svc node */
-    for (svc = (NODE *) get_value(user, S_svc).pval; svc; svc = svc->next) {
+    for (svc = (NODE *)get_value(user, S_svc).pval; svc; svc = svc->next) {
 
 	if (svc->type != N_svc_ppp)
 	    continue;
@@ -2478,7 +2513,7 @@ cfg_ppp_is_configured(char *username, int recurse)
 
     /* no matching node. Check containing group */
     if (user->member)
-	group = (USER *) hash_lookup(grouptable, user->member);
+	group = (USER *)hash_lookup(grouptable, user->member);
     else
 	group = NULL;
 
@@ -2502,7 +2537,7 @@ cfg_ppp_is_configured(char *username, int recurse)
 	/* still nothing. Check containing group and so on */
 
 	if (group->member)
-	    group = (USER *) hash_lookup(grouptable, group->member);
+	    group = (USER *)hash_lookup(grouptable, group->member);
 	else
 	    group = NULL;
     }

@@ -33,7 +33,7 @@ static int choose_sendauth(struct authen_data *, struct authen_type *);
 int
 choose_authen(struct authen_data *data, struct authen_type *type)
 {
-#ifdef SKEY
+#if defined(SKEY) || defined(ACECLNT)
     char *cfg_passwd;
 #endif
     char *name = data->NAS_id->username;
@@ -54,13 +54,22 @@ choose_authen(struct authen_data *data, struct authen_type *type)
 		/* must be version 0 */
 		break;
 	    }
-#ifdef SKEY
+#if defined(SKEY) || defined(ACECLNT)
 	    if (name[0] == '\0')
 		return(CHOOSE_GETUSER);
 	    cfg_passwd = cfg_get_enable_secret(name, TAC_PLUS_RECURSE);
+#endif
+#ifdef SKEY
 	    if (cfg_passwd != NULL && STREQ(cfg_passwd, "skey")) {
 		type->authen_func = skey_fn;
 		strcpy(type->authen_name, "skey_fn");
+		return(CHOOSE_OK);
+	    }
+#endif
+#ifdef ACECLNT
+	    if (cfg_passwd != NULL && STREQ(cfg_passwd, "aceclnt")) {
+		type->authen_func = aceclnt_fn;
+		strcpy(type->authen_name, "aceclnt_fn");
 		return(CHOOSE_OK);
 	    }
 #endif
@@ -127,7 +136,29 @@ choose_login(struct authen_data *data, struct authen_type *type)
 #endif	/* SKEY */
 	}
 
-	/* Not an skey user. Must be none, des, cleartext or file password */
+	/* Does this user require aceclnt */
+	cfg_passwd = cfg_get_login_secret(name, TAC_PLUS_RECURSE);
+	if (cfg_passwd && STREQ(cfg_passwd, "aceclnt")) {
+	    if (debug & DEBUG_PASSWD_FLAG)
+		report(LOG_DEBUG, "%s %s: user %s requires aceclnt",
+		       session.peer, session.port, name);
+#ifdef ACECLNT
+	    type->authen_func = aceclnt_fn;
+	    strcpy(type->authen_name, "aceclnt_fn");
+	    return(CHOOSE_OK);
+#else /* ACECLNT */
+	    report(LOG_ERR,
+		   "%s %s: user %s aceclnt support has not been compiled in",
+		   name ? name : "<unknown>",
+		   session.peer, session.port);
+	    return(CHOOSE_FAILED);
+#endif	/* ACECLNT */
+	}
+
+	/*
+	 * Not an skey or aceclnt user. Must be none, des, cleartext or file
+	 * password
+	 */
 	type->authen_func = default_fn;
 	strcpy(type->authen_name, "default_fn");
 	return(CHOOSE_OK);
@@ -170,8 +201,9 @@ choose_login(struct authen_data *data, struct authen_type *type)
 	    return(CHOOSE_OK);
 	}
 
-	/* Version 1 login/[pap|chap|arap].
-	 * The username must in the initial START packet
+	/*
+	 * Version 1 login/[pap|chap|arap].
+	 * The username must be in the initial START packet
 	 */
 	if (!name[0]) {
 	    report(LOG_ERR, "%s %s: No user in START packet for PAP/CHAP/ARAP",

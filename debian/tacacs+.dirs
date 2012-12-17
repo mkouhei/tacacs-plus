@@ -1,4 +1,6 @@
 usr/sbin
+usr/share/man/man8
+/usr/share/lintian/overrides
 etc/tacacs+
 etc/logrotate.d
 etc/default
