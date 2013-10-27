@@ -1,3 +1,9 @@
+tacacs+ (4.0.4.19-11+cust1) UNRELEASED; urgency=low
+
+  * Extend default authentication
+
+ -- Kouhei Maeda <mkouhei@palmtb.net>  Mon, 28 Oct 2013 00:23:51 +0900
+
 tacacs+ (4.0.4.19-11) unstable; urgency=low
   * Correct one lintian error.
 
