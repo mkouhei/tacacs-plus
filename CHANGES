@@ -394,3 +394,61 @@ F4.0.4.19
 	- add authorization script example - from Daniel Schmidt
 	- add partial support for single-connection mode
 	- convert select()s to poll()s
+
+F4.0.4.20
+	- remove stupid error message about running as root
+	- Drop the private regex library in favor of libc's.  A system w/o a
+	  regex is one I dont care about.
+	- finally remove config parsing for 'default authorization = permit'
+	- apply ACLs to pap, chap, arap and ms-chap authentication too
+	- change accounting log time format to match syslog
+	- do_auth.py fix from Daniel Schmidt
+	- import fdes from David G. Koontz (1991) for ARAP/MSCHAP_DES
+	- move MSCHAP define to autoconf; --enable-mschap
+	- use the fdes code for ARAP_DES and MSCHAP_DES.  NOTE: I have no way to
+	  test this.  lmk if it does not work.
+	- increase NAC address array size.  affects the format of the tacacs
+	  wholog file (TACPLUS_WHOLOGFILE); existing file should be removed.
+	- add comments to tac_plus.conf.5 about cipher algorithms in
+	  password_spec
+	- do_auth.py - Fixed reression, Support for replacing av pairs - from
+	  Daniel Schmidt
+
+F4.0.4.21
+	- do_auth.py - better Nexus support, better AV replacement, and only
+	  send roles to Nexus - from Daniel Schmidt
+	- fix bug in checking the return value of regexec() for login and enable
+	  ACLs.
+	- do_auth.py - better Nexus support, better AV replacement, and only
+
+F4.0.4.22
+	- check of regexec() return value inverted - from Ignas Kazlauskas
+
+F4.0.4.23
+	- fix build on netbsd
+	- update PAM includes for OSX - YiJia Zhang
+
+F4.0.4.24
+	- allow PAM for pap authentication - Jeroen Nijhof
+	- replace home-grown vprintf in report() with vsnprintf - Robert Swiecki
+	- dont use report in signal handler, since report uses syslog which uses
+	  malloc - Robert Swiecki
+	- use volatile sig_atomic_t 'reinitialize' variable - Robert Swiecki
+	- use snprintf in get_authen_continue() and send_authen_error() and
+	  check return - Robert Swiecki
+	- make snprintf buffers of get_authen_continue() and send_authen_error()
+	  at least NI_MAXHOST bytes - Robert Swiecki
+
+F4.0.4.25
+	- add -m (md5) option to tac_pwd.  XXX could use better salt generation
+	- use random() in tac_pwd if available and generate 4 bytes of salt for
+	  md5.
+	- sprintf -> snprintf - Robert Swiecki
+	- more pkt size checking in acct.c, authen.c, author.c - Robert Swiecki
+	- free(pak) in start_session() not in account(), for consistency
+
+F4.0.4.26
+	- add optional securid support via aceclient library - Matt Addison
+	- use localtime instead of gmtime for log messages so that the timezone
+	  is inheritted.
+	- allow file authentication for PAP authorization

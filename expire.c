@@ -49,6 +49,10 @@ static char *monthname[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN",
 static int32_t days_ere_month[] = {0, 31, 59, 90, 120, 151,
 				181, 212, 243, 273, 304, 334};
 
+/*
+ * compare the *date in a "month day year" format to the current day.  if
+ * greater, return PW_EXPIRED, else PW_OK.
+ */
 int
 check_expiration(char *date)
 {
@@ -59,7 +63,7 @@ check_expiration(char *date)
     monthstr[0] = '\0';
 
     /* If no date or a shell, let it pass.  (Backward compatibility.) */
-    if (!date || (strlen(date) == 0) || (*date == '/'))
+    if (date == NULL || (strlen(date) == 0) || (*date == '/'))
 	return(PW_OK);
 
     /* Parse date string.  Fail it upon error. */

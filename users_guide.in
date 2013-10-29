@@ -179,31 +179,11 @@ do this.
 
 A NOTE ABOUT ARAP, MSCHAP AND DES
 ---------------------------------
-If you have access to a DES library which implements the calls:
-
-int des_init();
-void des_setkey();
-void des_endes();
-void des_done();
-
-then you can define DES in tac_plus.h and link tac_plus with your DES
-library. This is recommended, as it will allow you to process ARAP and MSCHAP
-requests on your daemon, which is more efficient, and also more secure
-than processing them on the NAS.
-
-If you don't have access to des (which is U.S. export controlled), you
-can simply leave DES undefined in tac_plus.h. ARAP and MSCHAP
-authentication will still work, but it will be slightly less
-efficient, since the NAS will attempt to get the daemon to do the DES
-calculation before falling back to the alternative of calculating DES
-on the NAS.  It's also slightly less secure, because if someone
-discovers your encryption key, they can then download ARAP and MSCHAP
-secrets from your daemon.
-
-Note that this issue arises solely because U.S. government regulations
-currently make it difficult to export the source code for DES outside
-the US and Canada, which is why it is not included in this
-distribution.
+You link tac_plus with the supplied DES library for ARAP and MSCHAP with
+configure's --enable-arapdes and --enable-mschapdes options. This is
+recommended, as it will allow you to process ARAP and MSCHAP requests on
+your daemon, which is more efficient, and also more secure than processing
+them on the NAS.
 
 Lastly, this limitation of MSCHAP, ARAP and DES has no bearing on the
 use of des passwords for regular logins. Regular logins also use DES

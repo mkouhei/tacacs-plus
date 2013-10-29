@@ -48,32 +48,117 @@
 #ifdef HAVE_TERMIOS_H
 # include <termios.h>
 #endif
+#ifdef HAVE_CRYPT_H
+#include <crypt.h>
+#endif
+
+#define SALTBUFLEN	24
+#define HASHBUFLEN	32
 
 void	usage(void);
+
+char *
+get_salt(void)
+{
+    static char buf[SALTBUFLEN];
+    char *bp = buf;
+    int i, j, r, r1, r2;
+
+    r1 = r2 = 0;
+    memset(buf, 0, sizeof(buf));
+#if HAVE_RANDOM
+    srandom(time(0));
+#else
+    srand(time(0));
+#endif
+
+    /* 4 characters of salt */
+    for (j = 0; j <= 1; j++) {
+	for (i = 0; i <= 1; i++) {
+#if HAVE_RANDOM
+	    r = random();
+#else
+	    r = rand();
+#endif
+	    r = r & 127;
+
+	    if (r < 46)
+		r += 46;
+
+	    if (r > 57 && r < 65)
+		r += 7;
+
+	    if (r > 90 && r < 97)
+		r += 6;
+
+	    if (r > 122)
+		r -= 5;
+
+	    if (i == 0)
+		r1 = r;
+
+	    if (i == 1)
+		r2 = r;
+        }
+
+	snprintf(bp, SALTBUFLEN - (bp - buf), "%c%c", r1, r2);
+	bp += 2;
+    }
+    return buf;
+}
+
+char *
+do_des(char *passwd, char *salt)
+{
+    if (salt == NULL)
+	salt = get_salt();
+    else if (strlen(salt) > 4)
+	salt[4] = '\0';
+
+    return crypt(passwd, salt);
+}
+
+char *
+do_md5(char *passwd, char *salt)
+{
+    static char hash[HASHBUFLEN];
+
+    if (salt == NULL)
+	salt = get_salt();
+    if (strlen(salt) > 2)
+	salt[2] = '\0';
+    snprintf(hash, HASHBUFLEN, "$1$%s$", salt);
+    strncpy(hash, crypt(passwd, hash), HASHBUFLEN);
+
+    return hash;
+}
 
 int
 main(int argc, char **argv)
 {
     char		*crypt();
-    char		buf[24],
-			pass[25],
+    char		pass[25],
 			*salt = NULL;
     char		*result;
     extern char		*optarg;
     extern int		optind;
     char		*prompt = "Password to be encrypted: ";
-    int			opt_e = 0,
+    int			opt_e = 0,			/* do not echo passwd*/
+			opt_m = 0,			/* create md5 string */
 			n;
     struct termios	t;
 
-    while ((n = getopt(argc, argv, "eh")) != EOF) {
+    while ((n = getopt(argc, argv, "ehm")) != EOF) {
 	switch (n) {
 	case 'e':
-	    opt_e++;
+	    opt_e = 1;
 	    break;
 	case 'h':
 	    usage();
 	    exit(0);
+	    break;
+	case 'm':
+	    opt_m = 1;
 	    break;
 	default:
 	    usage();
@@ -104,44 +189,11 @@ main(int argc, char **argv)
 	tcsetattr(STDIN_FILENO, TCSANOW, &t);
     }
 
-    if (!salt) {
-	int i, r, r1, r2;
-
-	r1 = r2 = 0;
-
-	srand(time(0));
-
-	for (i = 0; i <= 1; i++) {
-
-	    r = rand();
-
-	    r = r & 127;
-
-	    if (r < 46)
-		r += 46;
-
-	    if (r > 57 && r < 65)
-		r += 7;
-
-	    if (r > 90 && r < 97)
-		r += 6;
-
-	    if (r > 122)
-		r -= 5;
-
-	    if (i == 0)
-		r1 = r;
-
-	    if (i == 1)
-		r2 = r;
-	}
-
-	sprintf(buf, "%c%c", r1, r2);
-	salt = buf;
+    if (opt_m) {
+	result = do_md5(pass, salt);
+    } else {
+	result = do_des(pass, salt);
     }
-
-    result = crypt(pass, salt);
-
     write(1, result, strlen(result));
     write(1, "\n", 1);
 
@@ -151,9 +203,10 @@ main(int argc, char **argv)
 void
 usage(void)
 {
-    fprintf(stderr, "Usage: tac_pwd [-eh] [<salt>]\n");
+    fprintf(stderr, "Usage: tac_pwd [-ehm] [<salt>]\n");
     fprintf(stderr, "\t-e\tdo not echo the password\n"
-		    "\t-h\tdisplay this message\n");
+		    "\t-h\tdisplay this message\n"
+		    "\t-m\tgenerate MD5 crypt\n");
 
     return;
 }

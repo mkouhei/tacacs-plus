@@ -1,6 +1,6 @@
 .\"
 .hys 50
-.TH tac_plus 8 "27 July 2009"
+.TH tac_plus 8 "28 July 2009"
 .\"
 .SH NAME
 tac_plus \- tacacs plus daemon
@@ -80,6 +80,8 @@ option.
 .sp
 .nf
 Value   Meaning
+2       configuration parsing debugging
+4       fork(1) debugging
 8       authorization debugging
 16      authentication debugging
 32      password file processing debugging
@@ -89,6 +91,8 @@ Value   Meaning
 512     encryption/decryption
 1024    MD5 hash algorithm debugging
 2048    very low level encryption/decryption
+32768   max session debugging
+65536   lock debugging
 .fi
 .\"
 .TP
@@ -235,8 +239,14 @@ root, as it contains passwords and keys.
 If the daemon is receives a SIGHUP or SIGUSR1, it will reinitialize itself
 and re-read its configuration file.
 .sp
-Note: if an error is encountered in the configuration file, the daemon
-will die.
+Note: if an error is encountered in the configuration file or the file can
+not be opened for reading, such as due to insufficient permissions resulting
+from process ownership and file permissions, the daemon will exit.
+.sp
+Likewise, if the daemon is configured to send accounting records to a file
+and that file can not be opened for writing, such as due to insufficient
+permissions resulting from process ownership and file permissions, the daemon
+will exit.
 .\"
 .SH "LOG MESSAGES"
 .B tac_plus

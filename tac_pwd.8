@@ -1,12 +1,12 @@
 .\"
 .hys 50
-.TH "tac_pwd" "8" "22 March 2003"
+.TH "tac_pwd" "8" "23 March 2012"
 .SH NAME
-tac_pwd \- generate DES encryption of a password
+tac_pwd \- generate DES or MD5 encryption of a password
 .\"
 .SH SYNOPSIS
 .B tac_pwd
-[\fB\-eh\fP]
+[\fB\-ehm\fP]
 [\c
 salt]
 .\"
@@ -17,11 +17,9 @@ password on stdout which may be used in lieu of the clear-text representation
 in the
 .BR tac_plus.conf (5).
 .PP
-The DES salt may be provide as a command-line argument.
+The DES salt may be provided as a command-line argument.
 .PP
 .SH COMMAND-LINE OPTIONS
-.TP
-.\"
 .TP
 .B \-e
 Do not echo the plain-text password to the terminal.
@@ -29,6 +27,11 @@ Do not echo the plain-text password to the terminal.
 .TP
 .B \-h
 Display help message.
+.\"
+.TP
+.B \-m
+Generate an MD5 encryption, instead of DES.
+This only works if crypt() on your host supports MD5.
 .\"
 .SH "SEE ALSO"
 .BR crypt (3),

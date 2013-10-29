@@ -10,16 +10,19 @@ bin_PROGRAMS = tac_pwd tac_plus
 tac_pwd_SOURCES = tac_pwd.c
 tac_plus_SOURCES = acct.c authen.c author.c choose_authen.c config.c \
 	default_fn.c default_v0_fn.c do_acct.c do_author.c dump.c enable.c \
-	encrypt.c expire.c hash.c maxsess.c parse.c programs.c pw.c pwlib.c \
-	regexp.c report.c sendauth.c sendpass.c tac_plus.c utils.c
+	encrypt.c expire.c hash.c maxsessint.c parse.c programs.c pw.c pwlib.c \
+	report.c sendauth.c sendpass.c tac_plus.c utils.c
 if TACSKEY
 tac_plus_SOURCES += skey_fn.c
+endif
+if TACACECLNT
+tac_plus_SOURCES += aceclnt_fn.c
 endif
 tac_plus_LDFLAGS = -L$(top_srcdir)
 tac_plus_LDADD = $(WRAPLIBS) -ltacacs
 
 lib_LTLIBRARIES = libtacacs.la
-libtacacs_la_SOURCES = md4.c md5.c packet.c
+libtacacs_la_SOURCES = fdes.c maxsess.c md4.c md5.c packet.c
 libtacacs_la_CFLAGS = @CFLAGS@ $(WARN) $(DBG) @PROFLAGS@
 #libtacacs_la_LIBADD = -lrib -lctsdb
 libtacacs_la_LDFLAGS = -version-info 1:0:0 -version-number 1:0:0
@@ -33,11 +36,11 @@ INCLUDES = $(WRAPINCS)
 # INCLUDES += -I$(top_srcdir)/include @PG_CPPFLAGS@
 
 include_HEADERS = tacacs.h
-noinst_HEADERS= md4.h mschap.h regexp.h tac_plus.h \
-		expire.h md5.h parse.h pathsl.h regmagic.h
+noinst_HEADERS= fdes.h des_iip.h des_ip.h des_key.h des_s_p.h md4.h mschap.h \
+		tac_plus.h expire.h md5.h parse.h pathsl.h
 
 man_gen_MANS = tac_plus.8 tac_plus.conf.5
-man_nogen_MANS = regexp.3 tac_pwd.8
+man_nogen_MANS = tac_pwd.8
 
 man_MANS = $(man_gen_MANS) $(man_nogen_MANS)
 
@@ -49,7 +52,7 @@ pkgdata_SCRIPTS = $(static_scripts) $(build_scripts)
 pkgdata_DATA= do_auth.py users_guide
 
 EXTRA_DIST = CHANGES COPYING FAQ INSTALL $(build_scripts:%=%.in) \
-		 $(man_nogen_MANS) do_auth.py users_guide.in
+		 $(man_nogen_MANS) do_auth.py tacacs+.spec users_guide.in
 
 # '.' is here (and at the front) so that distclean-recursive
 # will run make distclean in . after the other dirs

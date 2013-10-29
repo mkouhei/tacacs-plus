@@ -99,7 +99,7 @@ skey_fn(struct authen_data *data)
 
     /* Unless we're enabling, we need a username */
     if (data->service != TAC_PLUS_AUTHEN_SVC_ENABLE &&
-	!(char) data->NAS_id->username[0]) {
+	(char)data->NAS_id->username[0] == '\0') {
 	switch (p->state) {
 
 	case STATE_AUTHEN_GETUSER:
@@ -166,7 +166,7 @@ skey_fn(struct authen_data *data)
 
 	    if (skeychallenge(&p->skey, name, skeyprompt, 80) == 0) {
 		char buf[256];
-		sprintf(buf, "%s\nS/Key challenge: ", skeyprompt);
+		snprintf(buf, sizeof(buf), "%s\nS/Key challenge: ", skeyprompt);
 		data->server_msg = tac_strdup(buf);
 		data->status = TAC_PLUS_AUTHEN_STATUS_GETPASS;
 		p->state = STATE_AUTHEN_GETPASS;

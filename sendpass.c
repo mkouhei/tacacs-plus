@@ -91,7 +91,7 @@ do_sendpass_fn(struct authen_data *data)
 
     exp_date = cfg_get_expires(name, TAC_PLUS_RECURSE);
 
-    /* The user exists. Check her expiration date, if any */
+    /* The user exists. Check the expiration date, if any */
     expired = check_expiration(exp_date);
 
     switch (expired) {

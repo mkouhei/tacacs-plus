@@ -171,7 +171,7 @@ outbound_pap(struct authen_data *data)
 static void
 outbound_chap(struct authen_data *data)
 {
-    char *name, *secret, *chal, digest[MD5_LEN];
+    char *name, *secret, *chal, digest[TAC_MD5_DIGEST_LEN];
     char *p;
     u_char *mdp;
     char id;
@@ -252,9 +252,9 @@ outbound_chap(struct authen_data *data)
     /*
      * Now return the calculated response value */
 
-    data->server_data = tac_malloc(MD5_LEN);
-    memcpy(data->server_data, digest, MD5_LEN);
-    data->server_dlen = MD5_LEN;
+    data->server_data = tac_malloc(TAC_MD5_DIGEST_LEN);
+    memcpy(data->server_data, digest, TAC_MD5_DIGEST_LEN);
+    data->server_dlen = TAC_MD5_DIGEST_LEN;
 
     data->status = TAC_PLUS_AUTHEN_STATUS_PASS;
 }

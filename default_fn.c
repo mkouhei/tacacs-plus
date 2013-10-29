@@ -24,16 +24,12 @@
 #include "md5.h"
 
 #ifdef MSCHAP
-#include "md4.h"
-#include "mschap.h"
-
-#ifdef MSCHAP_DES
-#include "arap_des.h"
+# include "md4.h"
+# include "mschap.h"
 #endif
-#endif /* MSCHAP */
 
-#ifdef ARAP_DES
-#include "arap_des.h"
+#if ARAP_DES || MSCHAP_DES
+# include "fdes.h"
 #endif
 
 /* internal state variables */
@@ -312,7 +308,7 @@ pap_verify(struct authen_data *data)
 
     name = data->NAS_id->username;
 
-    if (!name[0]) {
+    if (name[0] == '\0') {
 	/* something awful has happened. Give up and die */
 	report(LOG_ERR, "%s %s: no username for inbound PAP login",
 	       session.peer, session.port);
@@ -327,7 +323,12 @@ pap_verify(struct authen_data *data)
     /* Assume the worst */
     data->status = TAC_PLUS_AUTHEN_STATUS_FAIL;
     verify(name, passwd, data, TAC_PLUS_RECURSE);
+#ifdef ACLS
+    if (verify_host(name, data, S_acl, TAC_PLUS_RECURSE) != S_permit)
+	data->status = TAC_PLUS_AUTHEN_STATUS_FAIL;
+#endif
     free(passwd);
+    return;
 }
 
 /* Verify the challenge and id against the response by looking up the
@@ -336,7 +337,7 @@ pap_verify(struct authen_data *data)
 static void
 chap_verify(struct authen_data *data)
 {
-    char *name, *secret, *chal, digest[MD5_LEN];
+    char *name, *secret, *chal, digest[TAC_MD5_DIGEST_LEN];
     char *exp_date, *p;
     u_char *mdp;
     char id;
@@ -353,7 +354,7 @@ chap_verify(struct authen_data *data)
 
     id = data->client_data[0];
 
-    chal_len = data->client_dlen - 1 - MD5_LEN;
+    chal_len = data->client_dlen - 1 - TAC_MD5_DIGEST_LEN;
     if (chal_len < 0) {
 	data->status = TAC_PLUS_AUTHEN_STATUS_ERROR;
 	return;
@@ -370,8 +371,10 @@ chap_verify(struct authen_data *data)
     /* Get the secret */
     secret = cfg_get_chap_secret(name, TAC_PLUS_RECURSE);
 
-    /* If there is no chap password for this user, see if there is a global
-     * password for her that we can use */
+    /*
+     * If there is no chap password for this user, see if there is a global
+     * password for her that we can use
+     */
     if (!secret) {
 	secret = cfg_get_global_secret(name, TAC_PLUS_RECURSE);
     }
@@ -413,14 +416,20 @@ chap_verify(struct authen_data *data)
      * digest value.  If they are equal, it's a pass, otherwise it's a
      * failure
      */
-    if (memcmp(digest, data->client_data + 1 + chal_len, MD5_LEN)) {
+    if (memcmp(digest, data->client_data + 1 + chal_len, TAC_MD5_DIGEST_LEN)) {
 	data->status = TAC_PLUS_AUTHEN_STATUS_FAIL;
     } else {
 	data->status = TAC_PLUS_AUTHEN_STATUS_PASS;
     }
 
+#ifdef ACLS
+    if (verify_host(name, data, S_acl, TAC_PLUS_RECURSE) != S_permit)
+	data->status = TAC_PLUS_AUTHEN_STATUS_FAIL;
+#endif
+
     exp_date = cfg_get_expires(name, TAC_PLUS_RECURSE);
     set_expiration_status(exp_date, data);
+    return;
 }
 
 /*
@@ -444,6 +453,7 @@ pw_bitshift(char *pw)
 	pws[i] = pw[i] << 1;
 
     memcpy(pw, pws, 8);
+    return;
 }
 
 static void
@@ -451,6 +461,9 @@ arap_verify(struct authen_data *data)
 {
     char nas_chal[8], r_chal[8], r_resp[8], secret[8];
     char *name, *cfg_secret, *exp_date, *p;
+#ifdef ARAP_DES
+    union LR_block desblk;
+#endif
 
     if (!(char) data->NAS_id->username[0]) {
 	report(LOG_ERR, "%s %s: no username for arap_verify",
@@ -500,15 +513,16 @@ arap_verify(struct authen_data *data)
     pw_bitshift(secret);
 
 #ifdef ARAP_DES
-    des_init(0);
-    des_setkey(secret);
-    des_endes(nas_chal);
-    des_done();
-#endif				/* ARAP_DES */
+    tac_set_des_mode(DES_MODE_ENCRYPT);
+    tac_des_loadkey(secret, DES_KEY_SHIFT);
+    memcpy(desblk.string, nas_chal, 8);
+    tac_des(&desblk);
+    memcpy(nas_chal, desblk.string, 8);
+#endif
 
     /*
-     * Now compare the remote's response value with the just calculated one
-     * value.  If they are equal, it's a pass, otherwise it's a failure.
+     * Now compare the remote's response value with the one just calculated.
+     * If they are equal, it's a pass, otherwise it's a failure.
      */
     if (memcmp(nas_chal, r_resp, 8)) {
 	data->status = TAC_PLUS_AUTHEN_STATUS_FAIL;
@@ -518,18 +532,25 @@ arap_verify(struct authen_data *data)
 
 #ifdef ARAP_DES
     /* Now calculate the response to the remote's challenge */
-    des_init(0);
-    des_setkey(secret);
-    des_endes(r_chal);
-    des_done();
-#endif	/* ARAP_DES */
+    tac_set_des_mode(DES_MODE_ENCRYPT);
+    tac_des_loadkey(secret, DES_KEY_SHIFT);
+    memcpy(desblk.string, r_chal, 8);
+    tac_des(&desblk);
+    memcpy(r_chal, desblk.string, 8);
+#endif
 
     data->server_data = tac_malloc(8);
     data->server_dlen = 8;
     memcpy(data->server_data, r_chal, 8);
 
+#ifdef ACLS
+    if (verify_host(name, data, S_acl, TAC_PLUS_RECURSE) != S_permit)
+	data->status = TAC_PLUS_AUTHEN_STATUS_FAIL;
+#endif
+
     exp_date = cfg_get_expires(name, TAC_PLUS_RECURSE);
     set_expiration_status(exp_date, data);
+    return;
 }
 
 #ifdef MSCHAP
@@ -538,8 +559,11 @@ static void
 mschap_desencrypt(char *clear, unsigned char *str, unsigned char *cypher)
 {
     unsigned char key[8];
+#ifdef MSCHAP_DES
+    union LR_block desblk;
+#endif
 
-    /* des_state_type *des_state = NULL; */
+    /* XXX des_state_type *des_state = NULL; */
 
     memset(key, 0, 8);
 
@@ -580,23 +604,27 @@ mschap_desencrypt(char *clear, unsigned char *str, unsigned char *cypher)
     /* copy clear to cypher, cause our des encrypts in place */
     memcpy(cypher, clear, 8);
 /*
+XXX
     des_init(0,&des_state);
     des_setkey(des_state,key);
     des_endes(des_state,cypher);
     des_done(des_state);
 */
 #ifdef MSCHAP_DES
-    des_init(0);
-    des_setkey(key);
-    des_endes(cypher);
-    des_done();
-#endif				/* MSCHAP_DES */
+    tac_set_des_mode(DES_MODE_ENCRYPT);
+    tac_des_loadkey(key, DES_KEY_SHIFT);
+    memcpy(desblk.string, cypher, 8);
+    tac_des(&desblk);
+    memcpy(cypher, desblk.string, 8);
+#endif
+    return;
 }
 
 static void
 mschap_deshash(char *clear, char *cypher)
 {
     mschap_desencrypt(MSCHAP_KEY, clear, cypher);
+    return;
 }
 
 static void
@@ -613,6 +641,7 @@ mschap_lmpasswordhash(char *password, char *passwordhash)
 
     mschap_deshash(&upassword[0], &passwordhash[0]);
     mschap_deshash(&upassword[7], &passwordhash[8]);
+    return;
 }
 
 static void
@@ -626,6 +655,7 @@ mschap_challengeresponse(char *challenge, char *passwordhash, char *response)
     mschap_desencrypt(challenge, &zpasswordhash[0], &response[0]);
     mschap_desencrypt(challenge, &zpasswordhash[7], &response[8]);
     mschap_desencrypt(challenge, &zpasswordhash[14], &response[16]);
+    return;
 }
 
 void
@@ -635,6 +665,7 @@ mschap_lmchallengeresponse(char *challenge, char *password, char *response)
 
     mschap_lmpasswordhash(password, passwordhash);
     mschap_challengeresponse(challenge, passwordhash, response);
+    return;
 }
 
 static int
@@ -672,6 +703,7 @@ mschap_ntpasswordhash(char *password, char *passwordhash)
     MD4Update(&context, unicode_password,
 	      mschap_unicode_len(unicode_password));
     MD4Final(passwordhash, &context);
+    return;
 }
 
 void
@@ -681,10 +713,11 @@ mschap_ntchallengeresponse(char *challenge, char *password, char *response)
 
     mschap_ntpasswordhash(password, passwordhash);
     mschap_challengeresponse(challenge, passwordhash, response);
+    return;
 }
 
 /*
- *Verify the challenge and id against the response by looking up the
+ * Verify the challenge and id against the response by looking up the
  * ms-chap secret in the config file. Set data->status appropriately.
  */
 static void
@@ -718,7 +751,7 @@ mschap_verify(struct authen_data *data)
 	report(LOG_DEBUG, "%s %s: ms-chap user=%s, id=%d chal_len=%d",
 	       session.peer, session.port, name, (int) id, chal_len);
 
-	/* report_hex(LOG_DEBUG, (u_char *)data->client_data + 1, chal_len); */
+	/* XXX report_hex(LOG_DEBUG, (u_char *)data->client_data + 1, chal_len); */
     }
     /* Assume failure */
     data->status = TAC_PLUS_AUTHEN_STATUS_ERROR;
@@ -777,8 +810,14 @@ mschap_verify(struct authen_data *data)
 	data->status = TAC_PLUS_AUTHEN_STATUS_PASS;
     }
 
+#ifdef ACLS
+    if (verify_host(name, data, S_acl, TAC_PLUS_RECURSE) != S_permit)
+	data->status = TAC_PLUS_AUTHEN_STATUS_FAIL;
+#endif
+
     exp_date = cfg_get_expires(name, TAC_PLUS_RECURSE);
     set_expiration_status(exp_date, data);
+    return;
 }
 #endif /* MSCHAP */
 
@@ -790,7 +829,8 @@ mschap_verify(struct authen_data *data)
 int
 verify_host(char *name, struct authen_data *data, int type, int recurse)
 {
-    char *val;
+    char *realname, *val;
+    int status;
 
     /* lookup host acl for user */
     if (!cfg_user_exists(name) && cfg_user_exists(DEFAULT_USERNAME)) {
@@ -798,14 +838,22 @@ verify_host(char *name, struct authen_data *data, int type, int recurse)
 	    report(LOG_DEBUG, "Authenticating ACLs for user '%s' instead of "
 		   "'%s'", DEFAULT_USERNAME, name);
 	}
-	val = cfg_get_pvalue(DEFAULT_USERNAME, 1, type, recurse);
+	realname = DEFAULT_USERNAME;
     } else
-	val = cfg_get_pvalue(name, 1, type, recurse);
+	realname = name;
+    val = cfg_get_pvalue(realname, 1, type, recurse);
 
     /* no host acl for user */
     if (val == NULL)
 	return(S_permit);
 
-    return(cfg_acl_check(val, data->NAS_id->NAS_ip));
+    if ((status = cfg_acl_check(val, data->NAS_id->NAS_ip)) != S_permit) {
+	if (debug & DEBUG_AUTHEN_FLAG)
+	    report(LOG_DEBUG, "host ACLs for user '%s' deny", realname);
+    } else
+	if (debug & DEBUG_AUTHEN_FLAG)
+	    report(LOG_DEBUG, "host ACLs for user '%s' permit", realname);
+
+    return(status);
 }
 #endif

@@ -1,6 +1,6 @@
 .\"
 .hys 50
-.TH tac_plus.conf 5 "2 March 2009"
+.TH tac_plus.conf 5 "6 June 2012"
 .\"
 .SH NAME
 .\"
@@ -92,32 +92,17 @@ interface.  For example:
 .\"
 .TP
 .B default authentication
-By default, authorization fails for users that do not appear in the
+By default, authentication fails for users that do not appear in the
 configuration file.  This overrides that behavior, thus permitting
-all authorization requests for such users.
+all authentication requests for such users.
 .sp
 .nf
     default authentication = file <filename>
 .fi
 .sp
-Such users will be authorized via the <user> "DEFAULT".
+Such users will be authentication via the <user> "DEFAULT".
 .sp
 Also see "user = DEFAULT", <default service>, and <default attribute>.
-.\"
-.TP
-.B default authorization
-Analogous to the use of <user> "DEFAULT" for default authentication.
-Provided for backward compatibility.
-.sp
-.nf
-    default authorization = <permission>
-.fi
-OR
-.nf
-    user = NAME {
-        default authorization = permit
-    }
-.fi
 .\"
 .TP
 .B group
@@ -227,15 +212,24 @@ the AV pair is optional.
     [ optional ] <string> = <string>
 .fi
 .sp
+Optional AV pairs are only sent to the client if it requests them.  That is,
+the client must have included the given AV pair as a mandatory or optional
+pair in the request.
+.sp
+Some clients react incorrectly and negatively to receiving AV pairs that it
+did not solicit.  Optional AV pairs should be ignored if they are not
+recognized or not supported in any given context.
+.sp
 Also see the "Configuring Authorization" and "AV Pairs" sections below.
 .\"
 .TP
 .B cmd_auth
 Specify command authorization.
 .sp
-For command authorization, the Cisco expands all commands to their
-full names.  For example, when the command "config t" is entered it
-will be expanded to "configuration terminal".
+For command authorization, the device should expand all abbreviated commands
+to their full names and compress adjacent white-space.
+For example, when the command "config t" is entered it will be expanded
+to "configure terminal".
 .sp
 .nf
     cmd = <string> {
@@ -250,7 +244,9 @@ Specify a command argument match.
 .sp
 .nf
     <permission> <regex>
-    <permission>		XXX: need .* ?
+    <permission> <regex>
+	...
+    <permission>
 .fi
 .sp
 The <regex> matches arguments of the command <string>.  For example,
@@ -262,6 +258,11 @@ to allow show diag but no other show commands:
         deny
     }
 .fi
+.sp
+The end of the <cmd-match> has an implicit <permission> determined by 
+<default service>.
+So, if the 'deny' had been omitted in the example above, the result of
+the authorization would be the value of <default service>.
 .sp
 Note: 'cmd-arg' should never appear in a configuration file.
 It is used internally by the daemon to construct a string
@@ -282,6 +283,8 @@ Specifies the default <permission> for service authorization.
     default service = <permission>
 .fi
 .sp
+If omitted, the default is 'deny'.
+.sp
 Note: if used, <default service> must precede all other <svc> directives
 in a <user> clause.
 .\"
@@ -300,6 +303,16 @@ directives in a <svc> clause.
 .B des_string
 Represents the one-way encryption of a password <string>.  For example,
 a password might encrypt to the string 0AmUKnIT2gheo.
+.sp
+DES is the encryption historically used in Unix passwd(5) files.  The
+crypt() function of the system's libcrypt is used to perform the
+encryption.  The libcrypt of modern Unicies tend to support additional
+encryption algorithms and thus so would
+.B tac_plus.
+See the system's crypt manual page.  To utilize another format, use the
+des keyword followed by the crypt in the format as described in the
+manpage.  Typically it will have a "$1" prefix for MD5, "$2" for blowfish,
+and so on.
 .sp
 .BR tac_pwd (8)
 is a utility supplied with
@@ -424,8 +437,9 @@ those exceptions, enclose the string in double quotes ("this has whitespace").
 .TP
 .B svc_auth
 	XXX:
-		service = ( exec | arap | slip | ppp | shell | tty-daemon |
-				connection | system ) protocol = <proto> {
+		service = ( arap | connection | exec | ppp protocol = <proto> |
+			shell | slip | system | tty-daemon | <client defined> )
+			{
 			[ <default attribute> ]
                         <attr_value_pair>*
                     }
@@ -452,6 +466,9 @@ news, syslog, user, and uucp.
         enable = <password_spec>
         pap  = cleartext "inbound pap password"
         opap = cleartext "outbound pap password"
+        pap  = des <des_string>
+        pap  = file <filename>
+        pap  = PAM
         login = <password_spec>
         global = cleartext "outbound pap password"
     }
@@ -503,6 +520,10 @@ chap
 	#endif
                          pap      = cleartext <string> |
                          pap      = des <string> |
+                         pap      = file <filename> |
+	#ifdef PAM
+                         pap      = PAM |
+	#endif
                          opap     = cleartext <string> |
                          global   = cleartext <string> |
                          msg      = <string>

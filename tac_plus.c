@@ -38,7 +38,7 @@ int deny_severity = 0;
 char *progname;			/* program name */
 static int standalone = 1;	/* running standalone (1) or under inetd (0) */
 static int initialised;		/* data structures have been allocated */
-static int reinitialize;	/* schedule config reinitialization */
+volatile sig_atomic_t reinitialize;	/* schedule config reinitialization */
 int sendauth_only;		/* don't respond to sendpass requests */
 int debug;			/* debugging flags */
 int facility = LOG_DAEMON;	/* syslog facility */
@@ -114,7 +114,9 @@ init(void)
 static RETSIGTYPE
 handler(int signum)
 {
-    report(LOG_NOTICE, "Received signal %d", signum);
+    /* report() is not reentrant-safe */
+#define RCVSIG_STR "Received signal\n"
+    write(fileno(stderr), RCVSIG_STR, strlen(RCVSIG_STR));
     reinitialize = 1;
 #ifdef REARMSIGNAL
     signal(SIGUSR1, handler);
@@ -143,7 +145,7 @@ reapchild(int notused)
 	if (pid <= 0)
 	    return;
 	if (debug & DEBUG_FORK_FLAG)
-	    report(LOG_DEBUG, "%l reaped", (long)pid);
+	    report(LOG_DEBUG, "%ld reaped", (long)pid);
     }
 }
 #endif /* REAPCHILD */
@@ -322,11 +324,6 @@ main(int argc, char **argv)
 	    usage();
 	    tac_exit(1);
 	}
-
-    if (geteuid() != 0) {
-	fprintf(stderr, "Warning, not running as uid 0\n");
-	fprintf(stderr, "Tac_plus is usually run as root\n");
-    }
 
     parser_init();
 
@@ -636,7 +633,7 @@ main(int argc, char **argv)
 		tac_exit(0);
 	} else {
 	    if (debug & DEBUG_FORK_FLAG)
-		report(LOG_DEBUG, "forked %l", (long)pid);
+		report(LOG_DEBUG, "forked %ld", (long)pid);
 	    /* parent */
 	    close(newsockfd);
 	}
@@ -681,7 +678,6 @@ bad_version_check(u_char *pak)
 /*
  * Determine the packet type, read the rest of the packet data,
  * decrypt it and call the appropriate service routine.
- *
  */
 void
 start_session(void)
@@ -725,6 +721,7 @@ start_session(void)
 
 	case TAC_PLUS_ACCT:
 	    accounting(pak);
+	    free(pak);
 	    break;
 
 	default:
@@ -772,6 +769,9 @@ void
 vers(void)
 {
     fprintf(stdout, "tac_plus version %s\n", version);
+#if ACECLNT
+    fprintf(stdout, "ACECLNT\n");
+#endif
 #if ACLS
     fprintf(stdout, "ACLS\n");
 #endif
@@ -880,9 +880,6 @@ vers(void)
 #endif
 #if SYSLOG_IN_SYS
     fprintf(stdout, "SYSLOG_IN_SYS\n");
-#endif
-#ifdef SYSV
-    fprintf(stdout, "SYSV\n");
 #endif
 #if TACPLUS_GROUPID
     fprintf(stdout, "TACPLUS_GROUPID\n");
