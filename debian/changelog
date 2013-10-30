@@ -1,3 +1,9 @@
+tacacs+ (4.0.4.26-3+cust1) UNRELEASED; urgency=low
+
+  * Extend default authentication.
+
+ -- Kouhei Maeda <mkouhei@palmtb.net>  Wed, 30 Oct 2013 10:54:35 +0900
+
 tacacs+ (4.0.4.26-3) unstable; urgency=low
   * Closes: #693089 missing reload action in init.d script usage output.
   * Closes: #693598 multi-arch misusage.

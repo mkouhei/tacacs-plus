@@ -1,0 +1,118 @@
+Description: Extend defualt authentication
+ Extend global directive "default authentication" to support PAM.
+ .
+ tacacs+ (4.0.4.26-3+cust1) UNRELEASED; urgency=low
+ .
+   * Extend default authentication.
+Author: Kouhei Maeda <mkouhei@palmtb.net>
+Forwarded: no
+Last-Update: 2013-10-28
+
+--- tacacs+-4.0.4.26.orig/config.c
++++ tacacs+-4.0.4.26/config.c
+@@ -802,10 +802,30 @@ parse_decls()
+ 		}
+ 		parse(S_authentication);
+ 		parse(S_separator);
++#if HAVE_PAM
++		if (sym_code == S_pam) {
++		    parse(S_pam);
++		    authen_default = tac_strdup(sym_buf);
++		    default_authen_type = TAC_PLUS_DEFAULT_AUTHEN_TYPE_PAM;
++		    continue;
++		} else if (sym_code == S_file) {
++		    parse(S_file);
++		    authen_default = tac_strdup(sym_buf);
++		    default_authen_type = TAC_PLUS_DEFAULT_AUTHEN_TYPE_FILE;
++		    sym_get();
++		    continue;
++		} else {
++		    parse_error("not support value defined authentication default on "
++		                "line %d", sym_line);
++		    return(1);
++		}
++#else
+ 		parse(S_file);
+ 		authen_default = tac_strdup(sym_buf);
++		default_authen_type = TAC_PLUS_DEFAULT_AUTHEN_TYPE_FILE;
+ 		sym_get();
+ 		continue;
++#endif
+ 	    }
+ 
+ 	case S_key:
+--- tacacs+-4.0.4.26.orig/default_fn.c
++++ tacacs+-4.0.4.26/default_fn.c
+@@ -241,6 +241,14 @@ tac_login(struct authen_data *data, stru
+     /* Do we have a password? */
+     passwd = p->password;
+ 
++#if HAVE_PAM
++    cfg_passwd = cfg_get_login_secret(name, TAC_PLUS_RECURSE);
++    if ((cfg_passwd == NULL) && (!passwd[0])) {
++	verify(name, passwd, data, TAC_PLUS_RECURSE);
++	return;
++    }
++#endif
++
+     if (!passwd[0]) {
+ 	/*
+ 	 * no password yet. Either we need to ask for one and expect to get
+@@ -270,8 +278,7 @@ tac_login(struct authen_data *data, stru
+ 	    }
+ #if HAVE_PAM
+ 	    /* if the authen method is PAM, let PAM prompt for the password */
+-	    if ((cfg_passwd = cfg_get_login_secret(name, TAC_PLUS_RECURSE))
+-		!= NULL) {
++	    if (cfg_passwd != NULL) {
+ 		if (strcmp(cfg_passwd, "PAM") == 0)
+ 		    break;
+ 	    }
+--- tacacs+-4.0.4.26.orig/pwlib.c
++++ tacacs+-4.0.4.26/pwlib.c
+@@ -141,10 +141,25 @@ verify(char *name, char *passwd, struct
+      * has been issued, attempt to use this password file
+      */
+     if (cfg_passwd == NULL) {
+-	char *file = cfg_get_authen_default();
+-	if (file) {
+-	    return(passwd_file_verify(name, passwd, data, file));
+-	}
++	if (default_authen_type == TAC_PLUS_DEFAULT_AUTHEN_TYPE_FILE) {
++	    char *file = cfg_get_authen_default();
++	    if (file) {
++	        return(passwd_file_verify(name, passwd, data, file));
++	    }
++#if HAVE_PAM
++	} else if (default_authen_type == TAC_PLUS_DEFAULT_AUTHEN_TYPE_PAM) {
++	    /* try to verify the password via PAM */
++	    if (!pam_verify(name, passwd)) {
++	        data->status = TAC_PLUS_AUTHEN_STATUS_FAIL;
++	        return(0);
++	    } else
++		data->status = TAC_PLUS_AUTHEN_STATUS_PASS;
++
++	    exp_date = cfg_get_expires(name, recurse);
++	    set_expiration_status(exp_date, data);
++	    return(data->status == TAC_PLUS_AUTHEN_STATUS_PASS);
++#endif
++        }
+ 
+ 	/* otherwise, we fail */
+ 	data->status = TAC_PLUS_AUTHEN_STATUS_FAIL;
+--- tacacs+-4.0.4.26.orig/tac_plus.h
++++ tacacs+-4.0.4.26/tac_plus.h
+@@ -217,6 +217,13 @@ extern struct timeval started_at;
+ extern char *wtmpfile;
+ extern int wtmpfd;
+ 
++/* extend default authentication */
++int default_authen_type;
++#define TAC_PLUS_DEFAULT_AUTHEN_TYPE_FILE  1
++#if HAVE_PAM
++#define TAC_PLUS_DEFAULT_AUTHEN_TYPE_PAM   2
++#endif
++
+ #define HASH_TAB_SIZE 157        /* user and group hash table sizes */
+ 
+ struct acct {
